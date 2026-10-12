@@ -240,5 +240,7 @@ body.offline::before { content: "\26A0  reconnecting\2026"; position: fixed; top
   .arena { gap: 4px; padding: 4px; } .seat { padding: 4px 6px; } .avatar { width: 32px; height: 32px; font-size: 1em; } .felt { border-width: 5px; border-radius: 18px; }
   .piles { padding: 2px 4px 6px; } .plabel { display: none; } .card.sm { --w: calc(var(--cw) * .7); } .sorters .btn { padding: .2em .5em; } .me-tag .ss { display: none; }
   .hand .card.sel { transform: translateY(-14px); }
+  .felt { flex-direction: row-reverse; } .piles { flex: none; align-self: center; gap: 10px; padding: 4px 10px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+.pile.locked { opacity: .55; filter: grayscale(.6); cursor: not-allowed; }

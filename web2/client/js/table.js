@@ -40,7 +40,7 @@ export class Table {
     this.me = v.players.find(p => p.id === this.app.session.playerId);
     this.myIdx = v.players.indexOf(this.me);
     if (this.lastHand !== v.handIndex || (prev && prev.phase !== 'playing' && v.phase === 'playing')) {
-      if (this.lastHand !== v.handIndex) { this.dealing = true; this.sel.clear(); this.order = []; this.meldSel = null; }
+      if (this.lastHand !== v.handIndex) { this.multi = false; this.dealing = true; this.sel.clear(); this.order = []; this.meldSel = null; }
       this.lastHand = v.handIndex;
     }
     const ids = this.me.hand.map(c => c.id);
@@ -143,9 +143,9 @@ export class Table {
     const disc = v.discard || [], top = disc[disc.length - 1];
     const stockN = v.stockCount != null ? v.stockCount : cnt(v.stock);
     this.stockEl = h('div', { class: 'pile stock' + (canDraw ? ' can' : ''), onclick: () => canDraw && this.draw('stock') },
-      h('div', { class: 'stack' }, backEl('s3'), backEl('s2'), backEl('s1')), h('div', { class: 'pcount' }, stockN), h('div', { class: 'plabel' }, t('pile.stock')));
-    this.discEl = h('div', { class: 'pile discard drop-discard' + (canDraw ? ' can' : ''), onclick: () => this.discardClick() },
-      top ? cardEl(top, { cls: 'dtop' }) : h('div', { class: 'card empty' }), h('div', { class: 'pcount' }, disc.length), h('div', { class: 'plabel' }, t('pile.discard')));
+      h('div', { class: 'stack' }, backEl('s3'), backEl('s2'), backEl('s1')), h('div', { class: 'plabel' }, t('pile.stock')));
+    this.discEl = h('div', { class: 'pile discard drop-discard' + (canDraw && !this.me.down ? ' can' : '') + (canDraw && this.me.down ? ' locked' : ''), title: this.me.down ? t('hint.noDiscard') : null, onclick: () => this.discardClick() },
+      top ? cardEl(top, { cls: 'dtop' }) : h('div', { class: 'card empty' }), h('div', { class: 'plabel' }, t('pile.discard')));
     const felt = h('div', { class: 'felt' }, meldsEl, h('div', { class: 'piles' }, this.stockEl, this.discEl));
     this.arena.className = 'arena n' + n;
     this.arena.replaceChildren(...seats, felt);
@@ -188,15 +188,17 @@ export class Table {
     let canLay = false;
     if (play && !me.down) { try { canLay = eng.canGoDown(me.hand, v.contract).ok; } catch { } }
     if (my && v.step === 'draw') {
-      acts.push(btn('green', t('act.drawStock'), () => this.draw('stock')), btn('blue', t('act.takeDiscard'), () => this.draw('discard'), !(v.discard || []).length));
+      acts.push(btn('green', t('act.drawStock'), () => this.draw('stock')), btn('blue', t('act.takeDiscard'), () => this.draw('discard'), !(v.discard || []).length || me.down));
     }
     if (play) {
       if (!me.down) acts.push(btn('primary' + (canLay ? ' pulse' : ''), '🃏 ' + t('act.lay') + (canLay ? ' ✓' : ''), () => this.openLay()));
       else {
         const m = v.melds.find(m => m.id === this.meldSel);
+        acts.push(btn(this.multi ? 'primary' : '', (this.multi ? '\u2611 ' : '\u2610 ') + t('act.multi'), () => { this.multi = !this.multi; if (!this.multi && this.sel.size > 1) this.sel.clear(); this.render(); }));
         acts.push(btn('blue' + (sel.length && m ? ' pulse' : ''), t('act.add'), () => this.addToMeld(), !(sel.length && m)));
       }
       acts.push(btn('red' + (sel.length === 1 ? ' pulse' : ''), t('act.discard') + (sel.length === 1 ? ' ' + cardName(byId.get(sel[0])) : ''), () => this.discard(sel[0]), sel.length !== 1));
+      if (sel.length > 1) acts.push(h('span', { class: 'hint' }, t('hint.oneToDiscard')));
     }
     const sorters = h('div', { class: 'sorters' }, h('button', { class: 'btn sm', onclick: () => this.sortHand('rank') }, t('act.sortRank')), h('button', { class: 'btn sm', onclick: () => this.sortHand('suit') }, t('act.sortSuit')));
     const hint = play && sel.length && me.down && !this.meldSel ? h('div', { class: 'hint' }, t('hint.pickMeld')) : null;
@@ -228,7 +230,7 @@ export class Table {
   }
   draw(from) { this.send({ type: 'draw', from }); }
   discardClick() {
-    if (this.myTurn && this.v.step === 'draw') return this.draw('discard');
+    if (this.myTurn && this.v.step === 'draw') { if (this.me.down) return toast(t('hint.noDiscard')); return this.draw('discard'); }
     if (this.myTurn && this.sel.size === 1) this.discard([...this.sel][0]);
   }
   async discard(id) { if (!id) return; const r = await this.send({ type: 'discard', cardId: id }); if (r && r.ok) this.sel.delete(id); }
@@ -242,7 +244,7 @@ export class Table {
       r = await this.tp.act({ type: 'add', meldId, cardIds: ids, position: 'end' });
       if (r && r.ok === false) { const r2 = await this.tp.act({ type: 'add', meldId, cardIds: ids, position: 'start' }); r = r2.ok ? r2 : r; }
     } else r = await this.tp.act({ type: 'add', meldId, cardIds: ids });
-    if (r && r.ok === false) toast(r.error || 'Error', 'bad'); else { ids.forEach(i => this.sel.delete(i)); }
+    if (r && r.ok === false) toast(r.error || 'Error', 'bad'); else { ids.forEach(i => this.sel.delete(i)); this.multi = false; }
   }
   openLay() {
     const byId = new Map(this.me.hand.map(c => [c.id, c]));
@@ -258,7 +260,7 @@ export class Table {
       if (!started && Math.hypot(dx, dy) > 8) {
         started = true; this.drag = { id }; el.classList.add('dragging');
         ghost = el.cloneNode(true); ghost.classList.add('ghost'); ghost.style.width = el.offsetWidth + 'px'; ghost.style.height = el.offsetHeight + 'px'; document.body.append(ghost);
-        if (this.sel.has(id) && this.sel.size > 1) ghost.dataset.count = this.sel.size;
+        if (this.multi && this.sel.has(id) && this.sel.size > 1) ghost.dataset.count = this.sel.size;
       }
       if (!started) return;
       ghost.style.transform = `translate(${ev.clientX - el.offsetWidth / 2}px,${ev.clientY - el.offsetHeight * .7}px) rotate(${Math.max(-12, Math.min(12, dx / 20))}deg)`;
@@ -280,11 +282,11 @@ export class Table {
     const up = () => {
       document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
       if (!started) { // tap
-        if (this.sel.has(id)) this.sel.delete(id); else this.sel.add(id);
+        if (this.sel.has(id)) this.sel.delete(id); else { if (!this.multi) this.sel.clear(); this.sel.add(id); }
         this.render(); return;
       }
       ghost.remove(); this.drag = null;
-      const tg = target; let multi = this.sel.has(id) ? this.order.filter(i => this.sel.has(i)) : [id];
+      const tg = target; let multi = this.multi && this.sel.has(id) ? this.order.filter(i => this.sel.has(i)) : [id];
       if (tg && tg.t === 'hand') { this.order = this.order.filter(i => i !== id); this.order.splice(tg.idx, 0, id); }
       if (this.pending) { const s = this.pending; this.pending = null; this.update(s); } else this.render();
       if (tg && tg.t === 'meld') this.addToMeld(tg.id, multi);
