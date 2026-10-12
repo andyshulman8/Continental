@@ -22,11 +22,13 @@ export class RemoteTransport {
   constructor(session) { this.s = session; this.es = null; }
   connect(h) {
     this.h = h;
+    let unloading = false; window.addEventListener('pagehide', () => { unloading = true; }); window.addEventListener('beforeunload', () => { unloading = true; });
     const open = () => {
       const es = this.es = new EventSource(`/api/events?code=${encodeURIComponent(this.s.code)}&token=${encodeURIComponent(this.s.token)}`);
       es.onopen = () => h.onStatus('online');
       es.onmessage = (m) => { try { h.onSnap(JSON.parse(m.data)); } catch (e) { console.error(e); } };
       es.onerror = () => {
+        if (unloading) return; // page is being reloaded/closed: keep the saved session
         if (es.readyState === EventSource.CLOSED) {
           // Browser gave up (e.g. 4xx). Check whether the room still exists.
           h.onStatus('lost');

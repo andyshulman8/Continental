@@ -19,6 +19,7 @@ export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 export function toast(msg, kind = '') {
   let box = document.getElementById('toasts');
   if (!box) { box = h('div', { id: 'toasts' }); document.body.append(box); }
+  box.replaceChildren(); // one message at a time, never stacked
   const el = h('div', { class: 'toast ' + kind }, msg);
   box.append(el);
   setTimeout(() => el.classList.add('out'), 3200);

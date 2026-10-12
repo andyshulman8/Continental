@@ -47,7 +47,7 @@ export class Table {
     const ids = this.me.hand.map(c => c.id);
     this.order = this.order.filter(i => ids.includes(i)); ids.forEach(i => { if (!this.order.includes(i)) this.order.push(i); });
     [...this.sel].forEach(i => { if (!ids.includes(i)) this.sel.delete(i); });
-    if (this.meldSel && !v.melds.some(m => m.id === this.meldSel)) this.meldSel = null;
+    if (this.meldSel && (!v.melds.some(m => m.id === this.meldSel) || !this.myTurn)) this.meldSel = null;
     // chat
     const chat = snap.chat || [];
     if (this.chatSeen == null) this.chatSeen = chat.length;
@@ -163,6 +163,15 @@ export class Table {
     const felt = h('div', { class: 'felt' }, meldsEl, h('div', { class: 'piles' }, this.stockEl, this.discEl, this.claimBox()));
     this.arena.className = 'arena n' + n;
     this.arena.replaceChildren(...seats, felt);
+    this.fitMelds(meldsEl);
+  }
+  // shrink meld cards step by step so every meld stays visible without scrolling (min size keeps ranks legible)
+  fitMelds(el) {
+    const fit = () => {
+      if (!el.isConnected) return;
+      for (let k = 0; k <= 3; k++) { el.dataset.fit = k; if (el.scrollHeight <= el.clientHeight + 1) break; }
+    };
+    fit(); requestAnimationFrame(fit);
   }
   discWhy() {
     if (this.me.down) return t('hint.noDiscard');
@@ -174,7 +183,7 @@ export class Table {
     const v = this.v, pc = v.pendingClaim; if (!pc || v.phase !== 'playing') return null;
     const card = cardFromId(pc.cardId), from = this.pname(pc.fromId), pen = v.claimPenalty || 0;
     if (!this.myClaim) return h('div', { class: 'claimbox wait' }, cardEl((v.discard || []).slice(-1)[0] || card, { cls: 'sm' }), h('div', {}, t('claim.wait', { name: this.pname(pc.current) })));
-    return h('div', { class: 'claimbox mine' }, h('div', { class: 'cq' }, t('claim.q', { name: from, card: cardName(card) }), pen ? h('small', {}, t('claim.pen', { n: pen })) : null),
+    return h('div', { class: 'claimbox mine' }, h('div', { class: 'cq' }, pc.fromId ? t('claim.q', { name: from, card: cardName(card) }) : t('claim.q0', { card: cardName(card) }), pen ? h('small', {}, t('claim.pen', { n: pen })) : null),
       h('div', { class: 'row center' }, h('button', { class: 'btn green xl', onclick: () => this.send({ type: 'claim' }) }, t('claim.take')), h('button', { class: 'btn xl', onclick: () => this.send({ type: 'pass' }) }, t('claim.pass'))));
   }
   seatEl(p, pos) {
@@ -273,7 +282,7 @@ export class Table {
       r = await this.tp.act({ type: 'add', meldId, cardIds: ids, position: 'end' });
       if (r && r.ok === false) { const r2 = await this.tp.act({ type: 'add', meldId, cardIds: ids, position: 'start' }); r = r2.ok ? r2 : r; }
     } else r = await this.tp.act({ type: 'add', meldId, cardIds: ids });
-    if (r && r.ok === false) toast(r.error || 'Error', 'bad'); else { ids.forEach(i => this.sel.delete(i)); this.multi = false; }
+    if (r && r.ok === false) toast(r.error || 'Error', 'bad'); else { ids.forEach(i => this.sel.delete(i)); this.multi = false; this.meldSel = null; }
   }
   openLay() {
     const byId = new Map(this.me.hand.map(c => [c.id, c]));
@@ -308,14 +317,16 @@ export class Table {
         if (idx < cs.length) cs[idx].classList.add('drop-hot', 'before'); else if (cs.length) cs[cs.length - 1].classList.add('drop-hot', 'end');
       }
     };
-    const up = () => {
+    const up = (ev) => {
+      const cancelled = ev && ev.type === 'pointercancel'; // system gesture interrupted the touch: never treat as a tap or drop
       document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+      if (!started && cancelled) return;
       if (!started) { // tap
         if (this.sel.has(id)) this.sel.delete(id); else { if (!this.multi) this.sel.clear(); this.sel.add(id); }
         this.render(); return;
       }
       ghost.remove(); this.drag = null;
-      const tg = target; let multi = this.multi && this.sel.has(id) ? this.order.filter(i => this.sel.has(i)) : [id];
+      const tg = cancelled ? null : target; let multi = this.multi && this.sel.has(id) ? this.order.filter(i => this.sel.has(i)) : [id];
       if (tg && tg.t === 'hand') { this.order = this.order.filter(i => i !== id); this.order.splice(tg.idx, 0, id); }
       if (this.pending) { const s = this.pending; this.pending = null; this.update(s); } else this.render();
       if (tg && tg.t === 'meld') this.addToMeld(tg.id, multi);
