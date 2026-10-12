@@ -1,3 +1,13 @@
+# Continental - Family Rules (v2)
+
+**Play:** `./run-lan.sh` then open the printed URL (e.g. http://192.168.x.x:5191/) on the iPad or any device on your Wi-Fi. Solo vs computers, or create a room and share the 4-letter code. English / Español, large-text option, full in-game rulebook.
+
+Code: `web2/client` (UI), `web2/shared` (rules engine + bots, `cd web2/shared && node --test`), `web2/server` (zero-dependency Node server). The older `web/`, `CardGameV2/` and `continental-backend/` are legacy.
+
+House rules implemented: 2 decks always; 11-card deal; red aces and jokers wild; black aces 15; can't discard the card you just drew; once down you can't draw from the discard pile; discard claiming (next player first, then others in turn order with a penalty card, own discard never, then dead); hard mode = go down leaving 0 or 1 card.
+
+---
+
 # Continental - Family Rules
 An iOS and Web game implementation of Continental (Family Rules variant) for 2-4 players
 
