@@ -227,7 +227,7 @@ export function previewAdd(meld, cards, position) {
 
 // ---------------------------------------------------------------- canGoDown
 // Finds a layout of the contract's melds inside `hand` (minimal melds; leftovers stay in hand).
-export function canGoDown(hand, contract) {
+export function canGoDown(hand, contract, opts = {}) {
   const kinds = contract.map(kindOf);
   const nR = kinds.filter((k) => k === 'run').length;
   const nS = kinds.length - nR;
@@ -241,7 +241,9 @@ export function canGoDown(hand, contract) {
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push(c);
   }
-  const cnt = (k) => (byKey.get(k) ? byKey.get(k).length : 0);
+  const cntObj = {};
+  for (const [k, v] of byKey) cntObj[k] = v.length;
+  const cnt = (k) => cntObj[k] || 0;
   const J = jokers.length;
 
   // ---- candidate generation
@@ -305,7 +307,7 @@ export function canGoDown(hand, contract) {
   let cardsUsed = 0;
   const minLeft = (j) => order.slice(j).reduce((t, k) => t + (k === 'run' ? 4 : 3), 0);
   function dfs(j, minIdx) {
-    if (j === order.length) return true;
+    if (j === order.length) return leaf();
     const kind = order[j];
     const list = kind === 'run' ? runCands : setCands;
     const start = j > 0 && order[j - 1] === kind ? minIdx : 0;
@@ -335,37 +337,77 @@ export function canGoDown(hand, contract) {
     }
     return false;
   }
-  if (!dfs(0, 0)) return { ok: false };
-
-  // ---- materialise
-  const queues = new Map([...byKey].map(([k, v]) => [k, v.slice()]));
-  const take = (k) => queues.get(k).shift();
-  const natCards = chosen.map((cand) => cand.slots
-    ? cand.slots.map((k) => (k ? take(k) : null))
-    : cand.nat.map((k) => take(k)));
-  const jq = jokers.slice();
-  const spare = () => {
-    for (const k of ['H1', 'D1']) if (queues.get(k) && queues.get(k).length) return queues.get(k).shift();
-    return null;
-  };
-  const melds = [];
-  for (let i = 0; i < chosen.length; i++) {
-    const cand = chosen[i];
-    const cards = natCards[i].slice();
-    if (cand.kind === 'run') {
-      for (let s = 0; s < cards.length; s++) if (!cards[s]) cards[s] = jq.length ? jq.shift() : spare();
-    } else {
-      for (let w = 0; w < cand.wilds; w++) cards.push(jq.length ? jq.shift() : spare());
+  let result = null;
+  function build() {
+    const queues = new Map([...byKey].map(([k, v]) => [k, v.slice()]));
+    const take = (k) => queues.get(k).shift();
+    const natCards = chosen.map((cand) => cand.slots
+      ? cand.slots.map((k) => (k ? take(k) : null))
+      : cand.nat.map((k) => take(k)));
+    const jq = jokers.slice();
+    const spare = () => {
+      for (const k of ['H1', 'D1']) if (queues.get(k) && queues.get(k).length) return queues.get(k).shift();
+      return null;
+    };
+    const melds = [];
+    for (let i = 0; i < chosen.length; i++) {
+      const cand = chosen[i];
+      const cards = natCards[i].slice();
+      if (cand.kind === 'run') {
+        for (let s = 0; s < cards.length; s++) if (!cards[s]) cards[s] = jq.length ? jq.shift() : spare();
+      } else {
+        for (let w = 0; w < cand.wilds; w++) cards.push(jq.length ? jq.shift() : spare());
+      }
+      const v = validateMeld(cards, cand.kind);
+      if (!v.ok) return null;
+      melds.push({ kind: cand.kind, cardIds: v.ordered.map((c) => c.id), cards: v.ordered });
     }
-    const v = validateMeld(cards, cand.kind);
-    if (!v.ok) return { ok: false };
-    melds.push({ kind: cand.kind, cardIds: v.ordered.map((c) => c.id), cards: v.ordered });
+
+    return melds;
   }
-  return { ok: true, melds };
+  function leaf() {
+    const melds = build();
+    if (!melds) return false;
+    if (opts.maxLeft === undefined) { result = melds; return true; }
+    const ext = extendLayout(hand, melds);
+    if (ext.left > opts.maxLeft) return false;
+    result = ext.melds;
+    return true;
+  }
+  if (!dfs(0, 0)) return { ok: false };
+  return { ok: true, melds: result };
+}
+
+// Greedily add leftover hand cards to freshly laid melds. Returns {melds, left}.
+export function extendLayout(hand, melds) {
+  const used = new Set(melds.flatMap((m) => m.cardIds));
+  const ms = melds.map((m) => {
+    const v = validateMeld(m.cards, m.kind);
+    return { kind: m.kind, cards: v.ordered, rank: v.rank, suit: v.suit, low: v.low };
+  });
+  let rest = hand.filter((c) => !used.has(c.id)).sort((a, b) => Number(isWild(a)) - Number(isWild(b)));
+  let progress = true;
+  while (progress && rest.length) {
+    progress = false;
+    for (const c of rest) {
+      for (const m of ms) {
+        const r = previewAdd(m, [c]);
+        if (r.ok) {
+          m.cards = r.cards;
+          Object.assign(m, r.patch);
+          rest = rest.filter((x) => x.id !== c.id);
+          progress = true;
+          break;
+        }
+      }
+      if (progress) break;
+    }
+  }
+  return { left: rest.length, melds: ms.map((m) => ({ kind: m.kind, cardIds: m.cards.map((c) => c.id), cards: m.cards })) };
 }
 
 // ---------------------------------------------------------------- state
-export function newGame({ players, hard = false, seed, dealSize = 11, dealSizes, maxReshuffles } = {}) {
+export function newGame({ players, hard = false, seed, dealSize = 11, dealSizes, maxReshuffles, claimPenalty = 1 } = {}) {
   if (!Array.isArray(players) || players.length < 2 || players.length > 4) {
     throw new Error('Continental needs 2 to 4 players.');
   }
@@ -399,6 +441,10 @@ export function newGame({ players, hard = false, seed, dealSize = 11, dealSizes,
     maxReshuffles: maxReshuffles ?? null,
     reshuffles: 0,
     turnCount: 0,
+    claimPenalty,
+    pendingClaim: null,
+    liveCardId: null,
+    discarderId: null,
     meldSeq: 0,
     drawnCardId: null,
     handWinnerId: null,
@@ -426,6 +472,9 @@ function deal(s) {
   s.step = 'draw';
   s.reshuffles = 0;
   s.turnCount = 0;
+  s.pendingClaim = null;
+  s.liveCardId = s.discard[0].id;
+  s.discarderId = null;
   s.drawnCardId = null;
   s.handWinnerId = null;
   s.winnerId = null;
@@ -463,6 +512,7 @@ export function viewFor(state, playerId) {
 }
 
 function endHand(s, winnerId, events, why) {
+  s.pendingClaim = null;
   const scores = {};
   for (const p of s.players) {
     const pts = p.id === winnerId ? 0 : p.hand.reduce((t, c) => t + cardPoints(c), 0);
@@ -493,6 +543,31 @@ function endHand(s, winnerId, events, why) {
 
 const fail = (error) => ({ ok: false, error });
 
+export function currentActor(state) {
+  if (state.phase !== 'playing') return null;
+  return state.pendingClaim ? state.pendingClaim.current : state.players[state.turn].id;
+}
+
+function claimQueue(s) {
+  const n = s.players.length;
+  const q = [];
+  if (n === 2) return q;
+  for (let i = 1; i < n; i++) {
+    const q2 = s.players[(s.turn + i) % n];
+    if (q2.id === s.discarderId || q2.down) continue;
+    q.push(q2.id);
+  }
+  return q;
+}
+
+function markDead(s, events) {
+  if (!s.liveCardId) return;
+  events.push({ type: 'dead', cardId: s.liveCardId });
+  const c = s.discard.find((x) => x.id === s.liveCardId);
+  pushLog(s, null, 'dead', `${c ? cardLabel(c) : 'The discard'} is dead and can no longer be taken.`);
+  s.liveCardId = null;
+}
+
 function takeFromHand(p, ids) {
   const set = new Set(ids);
   const taken = [];
@@ -512,10 +587,16 @@ export function act(state, playerId, action) {
 function actInner(state, playerId, action) {
   if (!action || typeof action !== 'object') return fail('No action given.');
   if (state.phase !== 'playing') return fail('This hand is over.');
-  const cur = state.players[state.turn];
-  if (cur.id !== playerId) return fail("It's not your turn.");
+  const isClaimAct = action.type === 'claim' || action.type === 'pass';
+  if (isClaimAct) {
+    if (!state.pendingClaim) return fail('There is no discard to claim right now.');
+    if (state.pendingClaim.current !== playerId) return fail("It's not your turn to decide on the discard.");
+  } else {
+    if (state.pendingClaim) return fail('Players are deciding whether to claim the discard.');
+    if (state.players[state.turn].id !== playerId) return fail("It's not your turn.");
+  }
   const s = clone(state);
-  const p = s.players[s.turn];
+  const p = isClaimAct ? s.players.find((q) => q.id === playerId) : s.players[s.turn];
   const events = [];
   const hasIds = (ids) => Array.isArray(ids) && ids.length > 0 && new Set(ids).size === ids.length
     && ids.every((id) => p.hand.some((c) => c.id === id));
@@ -527,12 +608,15 @@ function actInner(state, playerId, action) {
       if (from !== 'stock' && from !== 'discard') return fail('Draw from the stock or the discard pile.');
       let card;
       if (from === 'discard') {
+        if (s.discard.length && s.discarderId === p.id) return fail("You can't pick up your own discard.");
         if (p.down) return fail('Once you are down you can only draw from the stock.');
         if (!s.discard.length) return fail('The discard pile is empty.');
+        if (s.discard[s.discard.length - 1].id !== s.liveCardId) return fail('That discard is dead and can never be taken.');
         card = s.discard.pop();
+        s.liveCardId = null;
       } else {
         if (s.stock.length === 0) {
-          const cap = s.maxReshuffles ?? (minCardsFor(s.contract) > (s.hard ? 11 : 12) ? 0 : 2);
+          const cap = s.maxReshuffles ?? (s.players.length === 2 && minCardsFor(s.contract) > 12 ? 0 : 2);
           if (s.discard.length <= 1 || s.reshuffles >= cap) {
             endHand(s, null, events, 'the stock ran out');
             return { ok: true, state: s, events };
@@ -549,7 +633,42 @@ function actInner(state, playerId, action) {
       s.step = 'play';
       s.drawnCardId = card.id;
       events.push({ type: 'draw', playerId, from, ...(from === 'discard' ? { cardId: card.id } : {}) });
+      if (from === 'stock' && s.liveCardId) {
+        const q = claimQueue(s);
+        if (q.length) {
+          s.pendingClaim = { cardId: s.liveCardId, fromId: s.discarderId, queue: q.slice(1), current: q[0] };
+          events.push({ type: 'claimOpen', cardId: s.liveCardId, fromId: s.discarderId, current: q[0], queue: q.slice(1) });
+          pushLog(s, playerId, 'claimOpen', `${s.players.find((x) => x.id === q[0]).name} may claim the discard.`);
+        } else markDead(s, events);
+      }
       pushLog(s, playerId, 'draw', from === 'discard' ? `${p.name} took ${cardLabel(card)} from the discard pile.` : `${p.name} drew from the stock.`, from === 'discard' ? { cardId: card.id } : undefined);
+      return { ok: true, state: s, events };
+    }
+
+    case 'claim': {
+      const pc = s.pendingClaim;
+      const top = s.discard[s.discard.length - 1];
+      s.discard.pop();
+      p.hand.push(top);
+      let got = 0;
+      for (let i = 0; i < (s.claimPenalty || 0) && s.stock.length; i++) { p.hand.push(s.stock.pop()); got++; }
+      s.pendingClaim = null;
+      s.liveCardId = null;
+      events.push({ type: 'claim', playerId, cardId: pc.cardId, penalty: got });
+      pushLog(s, playerId, 'claim', `${p.name} claimed ${cardLabel(top)}${got ? ` and took ${got} penalty card${got > 1 ? 's' : ''}` : ''}.`, { cardId: top.id });
+      return { ok: true, state: s, events };
+    }
+
+    case 'pass': {
+      const pc = s.pendingClaim;
+      events.push({ type: 'pass', playerId });
+      pushLog(s, playerId, 'pass', `${p.name} passed on the discard.`);
+      if (pc.queue.length) {
+        s.pendingClaim = { ...pc, current: pc.queue[0], queue: pc.queue.slice(1) };
+      } else {
+        s.pendingClaim = null;
+        markDead(s, events);
+      }
       return { ok: true, state: s, events };
     }
 
@@ -578,6 +697,7 @@ function actInner(state, playerId, action) {
         built.push({ kind: m.kind, v });
       }
       takeFromHand(p, allIds);
+      if (s.hard && p.hand.length > 1) return fail('Hard mode: you must go down with at most 1 card left.');
       p.down = true;
       const ids = [];
       for (const b of built) {
@@ -588,7 +708,6 @@ function actInner(state, playerId, action) {
         else { meld.suit = b.v.suit; meld.low = b.v.low; }
         s.melds.push(meld);
       }
-      if (s.hard && p.hand.length === 0) return fail('Hard mode: keep one card to discard to go out.');
       events.push({ type: 'lay', playerId, meldIds: ids });
       pushLog(s, playerId, 'lay', `${p.name} went down with ${contractLabel(s.contract)}.`);
       if (p.hand.length === 0) endHand(s, playerId, events);
@@ -607,7 +726,6 @@ function actInner(state, playerId, action) {
       takeFromHand(p, action.cardIds);
       meld.cards = r.cards;
       Object.assign(meld, r.patch);
-      if (s.hard && p.hand.length === 0) return fail('Hard mode: keep one card to discard to go out.');
       events.push({ type: 'add', playerId, meldId: meld.id, n: cards.length, position: r.position });
       pushLog(s, playerId, 'add', `${p.name} added ${cards.map(cardLabel).join(' ')} to a ${meld.kind}.`);
       if (p.hand.length === 0) endHand(s, playerId, events);
@@ -621,6 +739,8 @@ function actInner(state, playerId, action) {
       if (card.id === s.drawnCardId && p.hand.length > 1) return fail('You cannot discard the card you just drew.');
       p.hand = p.hand.filter((c) => c.id !== card.id);
       s.discard.push(card);
+      s.liveCardId = card.id;
+      s.discarderId = playerId;
       events.push({ type: 'discard', playerId, cardId: card.id });
       pushLog(s, playerId, 'discard', `${p.name} discarded ${cardLabel(card)}.`, { cardId: card.id });
       if (p.hand.length === 0) {
@@ -630,8 +750,8 @@ function actInner(state, playerId, action) {
         s.step = 'draw';
         s.drawnCardId = null;
         s.turnCount = (s.turnCount || 0) + 1;
-        const feasible = minCardsFor(s.contract) <= (s.hard ? 11 : 12);
-        const maxTurns = s.maxTurns ?? s.players.length * (feasible ? 60 : 14);
+        const over = minCardsFor(s.contract) > 12;
+        const maxTurns = s.maxTurns ?? s.players.length * (!over ? 40 : s.players.length === 2 ? 14 : 24);
         if (s.turnCount >= maxTurns) {
           endHand(s, null, events, 'nobody could go out');
         }

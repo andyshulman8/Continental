@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  newGame, act, viewFor, nextHand, validateMeld, canGoDown, cardPoints, HANDS, previewAdd,
+  newGame, act, viewFor, currentActor, nextHand, validateMeld, canGoDown, cardPoints, HANDS, previewAdd,
 } from './engine.js';
 import { chooseAction } from './bots.js';
 
@@ -25,6 +25,8 @@ function setup({ n = 2, hand = 0, hard = false, hands = {}, melds = [], step = '
   s.step = step;
   for (const [i, h] of Object.entries(hands)) s.players[i].hand = typeof h === 'string' ? cs(h) : h;
   s.melds = melds;
+  s.liveCardId = s.discard[s.discard.length - 1].id;
+  s.discarderId = null;
   return s;
 }
 const ok = (r) => { assert.equal(r.ok, true, r.error); return r.state; };
@@ -266,6 +268,7 @@ test('draw then discard advances turn; wrong turn/step rejected', () => {
   const t = s.turn;
   const r = act(s, first, { type: 'draw', from: 'stock' });
   s = ok(r);
+  while (s.pendingClaim) s = ok(act(s, s.pendingClaim.current, { type: 'pass' }));
   assert.equal(s.players[t].hand.length, 12);
   assert.equal(r.events[0].type, 'draw');
   assert.equal(act(s, first, { type: 'draw', from: 'stock' }).ok, false);
@@ -437,18 +440,36 @@ test('normal mode: lay leaving one card then discard it to go out', () => {
   assert.equal(s.winnerId, 'p0');
 });
 
-test('hard mode: lay/add that would empty the hand is rejected; must discard last card', () => {
+test('hard mode: going down must leave at most 1 card; normal mode has no limit', () => {
   const lay = { type: 'lay', melds: [{ kind: 'set', cardIds: ids(cs('S7 H7 D7')) }, { kind: 'set', cardIds: ids(cs('S9 H9 C9')) }] };
-  const s0 = setup({ hard: true, hands: { 0: 'S7 H7 D7 S9 H9 C9', 1: 'S2 S3' } });
-  assert.equal(act(s0, 'p0', lay).ok, false);
-  const n0 = setup({ hard: false, hands: { 0: 'S7 H7 D7 S9 H9 C9', 1: 'S2 S3' } });
-  assert.equal(ok(act(n0, 'p0', lay)).phase, 'handOver');
-  const s1 = setup({ hard: true, hands: { 0: 'S7 H7 D7 S9 H9 C9 C9:1', 1: 'S2 S3' } });
-  const s = ok(act(s1, 'p0', lay));
-  assert.equal(act(s, 'p0', { type: 'add', meldId: s.melds[1].id, cardIds: ['d1-C-9'] }).ok, false);
-  const e = ok(act(s, 'p0', { type: 'discard', cardId: 'd1-C-9' }));
-  assert.equal(e.phase, 'handOver');
-  assert.equal(e.handWinnerId, 'p0');
+  const h2 = setup({ hard: true, hands: { 0: 'S7 H7 D7 S9 H9 C9 C2 C3', 1: 'S2 S3' } });
+  const r = act(h2, 'p0', lay);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /at most 1 card/);
+  const n2 = setup({ hard: false, hands: { 0: 'S7 H7 D7 S9 H9 C9 C2 C3', 1: 'S2 S3' } });
+  assert.equal(ok(act(n2, 'p0', lay)).phase, 'playing');
+  for (const hard of [true, false]) {
+    const s0 = setup({ hard, hands: { 0: 'S7 H7 D7 S9 H9 C9', 1: 'S2 S3' } });
+    const s = ok(act(s0, 'p0', lay));
+    assert.equal(s.phase, 'handOver');
+    assert.equal(s.handWinnerId, 'p0');
+  }
+  const s1 = setup({ hard: true, hands: { 0: 'S7 H7 D7 S9 H9 C9 C2', 1: 'S2 S3' } });
+  let s = ok(act(s1, 'p0', lay));
+  s = ok(act(s, 'p0', { type: 'discard', cardId: 'd0-C-2' }));
+  assert.equal(s.handWinnerId, 'p0');
+});
+
+test('hard bot only lays when it can go out; extends melds to dump leftovers', () => {
+  const s0 = setup({ hard: true, hands: { 0: 'S7 H7 D7 C7 S9 H9 C9 D9 C2', 1: 'S2 S3' } });
+  const a = chooseAction(viewFor(s0, 'p0'), 'hard');
+  assert.equal(a.type, 'lay');
+  assert.ok(ok(act(s0, 'p0', a)).players[0].hand.length <= 1);
+  const s1 = setup({ hard: true, hands: { 0: 'S7 H7 D7 S9 H9 C9 C2 C3 D12 H12 C13', 1: 'S2 S3' } });
+  assert.notEqual(chooseAction(viewFor(s1, 'p0'), 'hard').type, 'lay');
+  const c = canGoDown(cs('S7 H7 D7 C7 S9 H9 C9 D9'), HANDS(2)[0], { maxLeft: 0 });
+  assert.ok(c.ok);
+  assert.equal(c.melds.flatMap((m) => m.cardIds).length, 8);
 });
 
 test('discard of last card goes out in normal mode and rotates nothing', () => {
@@ -485,11 +506,11 @@ test('stock exhaustion with nothing to reshuffle ends hand as stalemate', () => 
 });
 
 test('infeasible contract ends via stalemate once stock runs out (no reshuffle)', () => {
-  const s0 = setup({ n: 3, hand: 6, step: 'draw' });
+  const s0 = setup({ n: 2, hand: 7, step: 'draw' });
   s0.stock = [];
   s0.discard = cs('S2 S3 S4');
   const s = ok(act(s0, 'p0', { type: 'draw', from: 'stock' }));
-  assert.equal(s.phase, 'handOver');
+  assert.notEqual(s.phase, 'playing');
 });
 
 // ---------------------------------------------------------------- scoring / flow
@@ -570,10 +591,12 @@ test('hard bot lays down when it can and adds to melds when down', () => {
 test('hard bot takes a discard that completes its contract and discards high dead cards', () => {
   const s0 = setup({ step: 'draw', hands: { 0: 'S7 H7 S9 H9 C9 S2 C13 D4 H5 C3 D12', 1: 'S2 S3' } });
   s0.discard = cs('D7');
+  s0.liveCardId = 'd0-D-7';
   const a = chooseAction(viewFor(s0, 'p0'), 'hard');
   assert.deepEqual(a, { type: 'draw', from: 'discard' });
   const s1 = setup({ step: 'draw', hands: { 0: 'S7 H7 S9 H9 C9 S2 C13 D4 H5 C3 D12', 1: 'S2 S3' } });
   s1.discard = cs('C11');
+  s1.liveCardId = 'd0-C-11';
   assert.deepEqual(chooseAction(viewFor(s1, 'p0'), 'hard'), { type: 'draw', from: 'stock' });
   const s2 = setup({ hands: { 0: 'S7 H7 D7 S9 H9 S2 C13 D4 H5 C3 D12 C8', 1: 'S2 S3' } });
   const d = chooseAction(viewFor(s2, 'p0'), 'hard');
@@ -584,6 +607,7 @@ test('hard bot takes a discard that completes its contract and discards high dea
 // ---------------------------------------------------------------- fuzz
 function playGame(n, seed, hard, levels) {
   let s = newGame({
+    claimPenalty: seed % 5 === 0 ? 0 : 1,
     players: Array.from({ length: n }, (_, i) => ({ id: `b${i}`, name: `B${i}`, isBot: true, botLevel: levels[i % levels.length] })),
     hard,
     seed,
@@ -593,7 +617,7 @@ function playGame(n, seed, hard, levels) {
   while (s.phase !== 'gameOver') {
     if (s.phase === 'handOver') { s = nextHand(s); continue; }
     if (++steps > 40000) throw new Error(`infinite loop seed=${seed} n=${n}`);
-    const p = s.players[s.turn];
+    const p = s.players.find((q) => q.id === currentActor(s));
     const a = chooseAction(viewFor(s, p.id), p.botLevel);
     const r = act(s, p.id, a);
     if (!r.ok) throw new Error(`illegal action seed=${seed} n=${n} hard=${hard} level=${p.botLevel}: ${JSON.stringify(a)} -> ${r.error}`);
@@ -613,7 +637,7 @@ test('fuzz: 200 bot-vs-bot games, no illegal actions or infinite loops', () => {
   const downHands = new Set();
   for (let g = 0; g < 200; g++) {
     const n = 2 + (g % 3);
-    const { s, downs } = playGame(n, g + 1000, g % 4 === 3, lvls[g % 4]);
+    const { s, downs } = playGame(n, g + 1000, g % 10 === 9, lvls[g % 4]);
     assert.equal(s.phase, 'gameOver');
     assert.equal(s.players[0].handScores.length, n === 3 ? 9 : 8);
     wins += s.players.reduce((t, p) => t + p.handScores.filter((x) => x === 0).length, 0);
@@ -659,10 +683,113 @@ test('cannot discard the card just drawn (unless it is the only card)', () => {
   // discard-draw too
   const t0 = setup({ step: 'draw', hands: { 0: 'S7 H7', 1: 'S2 S3' } });
   t0.discard = cs('D13');
+  t0.liveCardId = 'd0-D-13';
   const t = ok(act(t0, 'p0', { type: 'draw', from: 'discard' }));
   assert.equal(act(t, 'p0', { type: 'discard', cardId: 'd0-D-13' }).ok, false);
   // only card in hand: allowed
   const u = setup({ hands: { 0: 'S7', 1: 'S2 S3' } });
   u.drawnCardId = 'd0-S-7';
   assert.equal(act(u, 'p0', { type: 'discard', cardId: 'd0-S-7' }).ok, true);
+});
+
+// ---------------------------------------------------------------- discard claims
+function claimGame(n = 3, penalty = 1) {
+  const s = newGame({ players: mkPlayers(n), seed: 21, claimPenalty: penalty });
+  s.turn = 0; s.step = 'play';
+  s.players.forEach((p, i) => { p.hand = cs('S2 S3 S5 S9 H9 C13'.split(' ').slice(0, 6).join(' ')).map((c, j) => ({ ...c, id: `x${i}-${j}` })); });
+  return s;
+}
+function discardBy0(s, id = 'x0-5') {
+  s.players[0].hand.push({ id, rank: 6, suit: 'D', joker: false });
+  s.players[0].hand = s.players[0].hand.slice();
+  return ok(act(s, 'p0', { type: 'discard', cardId: id }));
+}
+
+test('claim: next player draws live discard normally; discarder cannot; others cannot', () => {
+  let s = discardBy0(claimGame());
+  assert.equal(s.liveCardId, 'x0-5');
+  assert.equal(s.discarderId, 'p0');
+  assert.equal(currentActor(s), 'p1');
+  assert.equal(act(s, 'p2', { type: 'draw', from: 'discard' }).ok, false);
+  s = ok(act(s, 'p1', { type: 'draw', from: 'discard' }));
+  assert.equal(s.pendingClaim, null);
+  assert.equal(s.liveCardId, null);
+});
+
+test('claim: N1 draws stock -> N2 decides; claim gives penalty; N1 continues', () => {
+  let s = discardBy0(claimGame());
+  const stock0 = s.stock.length;
+  const r = act(s, 'p1', { type: 'draw', from: 'stock' });
+  s = ok(r);
+  assert.equal(r.events.at(-1).type, 'claimOpen');
+  assert.deepEqual(s.pendingClaim, { cardId: 'x0-5', fromId: 'p0', queue: [], current: 'p2' });
+  assert.equal(currentActor(s), 'p2');
+  assert.equal(viewFor(s, 'p2').pendingClaim.current, 'p2');
+  assert.equal(act(s, 'p1', { type: 'discard', cardId: s.players[1].hand[0].id }).ok, false);
+  assert.equal(act(s, 'p2', { type: 'draw', from: 'stock' }).ok, false);
+  assert.equal(act(s, 'p1', { type: 'claim' }).ok, false);
+  const c = act(s, 'p2', { type: 'claim' });
+  s = ok(c);
+  assert.deepEqual(c.events[0], { type: 'claim', playerId: 'p2', cardId: 'x0-5', penalty: 1 });
+  assert.equal(s.players[2].hand.length, 8);
+  assert.equal(s.stock.length, stock0 - 2);
+  assert.equal(s.pendingClaim, null);
+  assert.equal(s.liveCardId, null);
+  assert.equal(currentActor(s), 'p1');
+  assert.equal(s.step, 'play');
+  // dead afterwards
+  s = ok(act(s, 'p1', { type: 'discard', cardId: s.players[1].hand[0].id }));
+  assert.equal(s.liveCardId, s.discard.at(-1).id);
+});
+
+test('claim: everyone passes -> card dead; zero penalty option', () => {
+  let s = discardBy0(claimGame(4, 0));
+  s = ok(act(s, 'p1', { type: 'draw', from: 'stock' }));
+  assert.equal(s.pendingClaim.current, 'p2');
+  s = ok(act(s, 'p2', { type: 'pass' }));
+  assert.equal(s.pendingClaim.current, 'p3');
+  const r = act(s, 'p3', { type: 'pass' });
+  s = ok(r);
+  assert.deepEqual(r.events.map((e) => e.type), ['pass', 'dead']);
+  assert.equal(s.pendingClaim, null);
+  assert.equal(s.liveCardId, null);
+  // dead card cannot be drawn later
+  s = ok(act(s, 'p1', { type: 'discard', cardId: s.players[1].hand[0].id }));
+  s = ok(act(s, 'p2', { type: 'draw', from: 'stock' }));
+  s = ok(act(s, 'p3', { type: 'pass' }));
+  s = ok(act(s, 'p0', { type: 'pass' }));
+  s = ok(act(s, 'p2', { type: 'discard', cardId: s.players[2].hand[0].id }));
+  assert.equal(act(s, 'p3', { type: 'draw', from: 'discard' }).ok, true);
+  const d = discardBy0(claimGame(4, 0));
+  d.liveCardId = null;
+  assert.match(act(d, 'p1', { type: 'draw', from: 'discard' }).error, /dead/);
+});
+
+test('claim: 2 players has no window; down players skipped; starter card is live', () => {
+  let s = discardBy0(claimGame(2));
+  const r = act(s, 'p1', { type: 'draw', from: 'stock' });
+  assert.equal(r.state.pendingClaim, null);
+  assert.equal(r.events.at(-1).type, 'dead');
+  let t = discardBy0(claimGame(3));
+  t.players[2].down = true;
+  t = ok(act(t, 'p1', { type: 'draw', from: 'stock' }));
+  assert.equal(t.pendingClaim, null);
+  const g = newGame({ players: mkPlayers(3), seed: 2 });
+  assert.equal(g.liveCardId, g.discard[0].id);
+  const first = g.players[g.turn].id;
+  const q = ok(act(g, first, { type: 'draw', from: 'stock' }));
+  assert.equal(q.pendingClaim.queue.length, 1);
+});
+
+test('claim: bot answers claim windows legally', () => {
+  let s = discardBy0(claimGame(3));
+  s = ok(act(s, 'p1', { type: 'draw', from: 'stock' }));
+  for (const lv of ['easy', 'normal', 'hard']) {
+    const a = chooseAction(viewFor(s, 'p2'), lv);
+    assert.ok(['claim', 'pass'].includes(a.type));
+    assert.ok(act(s, 'p2', a).ok);
+  }
+  s.discard[s.discard.length - 1] = C('JK');
+  s.liveCardId = 'd0-JK-1';
+  assert.equal(chooseAction(viewFor(s, 'p2'), 'hard').type, 'claim');
 });

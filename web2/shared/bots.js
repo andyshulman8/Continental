@@ -1,5 +1,5 @@
 // Continental bots. chooseAction(view, level) -> a legal action for the player whose turn it is.
-import { act, canGoDown, cardPoints, isWild, minCardsFor, previewAdd, SUITS } from './engine.js';
+import { act, currentActor, canGoDown, cardPoints, isWild, minCardsFor, previewAdd, SUITS } from './engine.js';
 
 const kindOf = (e) => (typeof e === 'string' ? e : e.kind);
 
@@ -28,7 +28,7 @@ function deficit(hand, contract) {
       }
     }
     wins.sort((a, b) => b.have - a.have);
-    wins.length = Math.min(wins.length, 8);
+    wins.length = Math.min(wins.length, 6);
   }
   let best = -1;
   const used = {};
@@ -167,7 +167,7 @@ function chooseDraw(view, me, level) {
   const stockDead = view.stockCount === 0 && view.discard.length <= 1;
   const stock = { type: 'draw', from: 'stock' };
   const top = view.discard[view.discard.length - 1];
-  if (!top || me.down) return stock;
+  if (!top || me.down || top.id !== view.liveCardId || view.discarderId === me.id) return stock;
   const take = { type: 'draw', from: 'discard' };
   if (level === 'easy') {
     return Math.random() < 0.15 || (isWild(top) && Math.random() < 0.6) ? take : stock;
@@ -191,7 +191,7 @@ function chooseDraw(view, me, level) {
 function choosePlay(view, me, level) {
   if (!me.down) {
     if (me.hand.length >= minCardsFor(view.contract)) {
-      const g = canGoDown(me.hand, view.contract);
+      const g = view.hard ? canGoDown(me.hand, view.contract, { maxLeft: 1 }) : canGoDown(me.hand, view.contract);
       if (g.ok) {
         const action = { type: 'lay', melds: g.melds.map((m) => ({ kind: m.kind, cardIds: m.cardIds })) };
         if (legal(view, me, action)) return action;
@@ -207,15 +207,34 @@ function choosePlay(view, me, level) {
   return chooseDiscard(view, me, level);
 }
 
+function chooseClaim(view, me, level) {
+  const top = view.discard[view.discard.length - 1];
+  const yes = { type: 'claim' };
+  const no = { type: 'pass' };
+  if (!top || me.down) return no;
+  if (level === 'easy') return Math.random() < 0.1 ? yes : no;
+  if (isWild(top)) return yes;
+  const min = minCardsFor(view.contract);
+  const withTop = [...me.hand, top];
+  if (withTop.length >= min && canGoDown(withTop, view.contract).ok && !(me.hand.length >= min && canGoDown(me.hand, view.contract).ok)) return yes;
+  const better = deficit(withTop, view.contract) < deficit(me.hand, view.contract);
+  if (level === 'normal') return better && Math.random() < 0.6 ? yes : no;
+  return better ? yes : no;
+}
+
 // ------------------------------------------------------------ API
 export function chooseAction(view, level = 'normal') {
   const lv = level === 'easy' || level === 'hard' ? level : 'normal';
-  const me = view.players[view.turn];
-  if (!me || view.phase !== 'playing') return null;
+  if (view.phase !== 'playing') return null;
+  const actor = view.pendingClaim ? view.pendingClaim.current : view.players[view.turn].id;
+  const me = view.players.find((p) => p.id === actor);
+  if (!me) return null;
   try {
+    if (view.pendingClaim) return chooseClaim(view, me, lv);
     if (view.step === 'draw') return chooseDraw(view, me, lv);
     return choosePlay(view, me, lv);
   } catch (e) {
+    if (view.pendingClaim) return { type: 'pass' };
     if (view.step === 'draw') return { type: 'draw', from: 'stock' };
     return fallbackDiscard(view, me);
   }
