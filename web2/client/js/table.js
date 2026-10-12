@@ -4,7 +4,7 @@ import { settings, saveSettings, COLORS } from './store.js';
 import { eng } from './engine.js';
 import { cardEl, backEl, cardFromId, cardName, RANKS, SUIT } from './cards.js';
 import { fly, beep } from './fx.js';
-import { openRules, openSettings, openBuilder, openScoreboard, openPodium, closeModal } from './modals.js';
+import { openScoreSheet, openRules, openSettings, openBuilder, openScoreboard, openPodium, closeModal } from './modals.js';
 
 const EMOTES = ['👍', '👏', '😂', '😮', '❤️', '😭'];
 const PHRASES = ['phrase.gg', 'phrase.hurry', 'phrase.oops', 'phrase.nice'];
@@ -63,7 +63,7 @@ export class Table {
     // modals
     const key = v.phase === 'handOver' ? 'h' + v.handIndex : v.phase === 'gameOver' ? 'g' : null;
     if (key !== this.modalKey) {
-      closeModal('sb'); closeModal('podium'); closeModal('builder');
+      closeModal('sb'); closeModal('podium'); closeModal('sheet'); closeModal('builder');
       this.modalKey = key;
       if (key && key[0] === 'h') setTimeout(() => { if (this.modalKey === key) openScoreboard(this.app, this.v); }, 700);
       if (key === 'g') setTimeout(() => { if (this.modalKey === key) openPodium(this.app, this.v); }, 900);
@@ -114,6 +114,7 @@ export class Table {
         h('div', { class: 'contract' }, h('small', {}, t('contract')), v.contract.map(chip)), v.hard ? h('span', { class: 'hardbadge' }, t('home.hardShort')) : null),
       h('div', { class: 'tb-mid' }, this.promptEl()),
       h('div', { class: 'tb-right' },
+        h('button', { class: 'ico', title: t('sheet.title'), onclick: () => openScoreSheet(this.app, this.v) }, '\uD83D\uDCCB'),
         h('button', { class: 'ico', title: t('rules'), onclick: () => openRules() }, '❓'),
         h('button', { class: 'ico', title: t('settings'), onclick: () => openSettings(this.app) }, '⚙️'),
         h('button', { class: 'ico side-toggle', onclick: () => { this.sideOpen = !this.sideOpen; this.side.classList.toggle('open', this.sideOpen); } }, '💬'),

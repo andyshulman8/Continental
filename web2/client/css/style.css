@@ -244,3 +244,14 @@ body.offline::before { content: "\26A0  reconnecting\2026"; position: fixed; top
 }
 @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 .pile.locked { opacity: .55; filter: grayscale(.6); cursor: not-allowed; }
+table.sheet { border: 2px solid #ffffff44; font-size: 1.05em; }
+.sheet th, .sheet td { border: 1px solid #ffffff26; padding: .45em .7em; }
+.sheet th.pg { border-bottom: 4px solid var(--pc); font-size: 1.1em; } .sheet th.pg.me { background: #ffffff1a; }
+.sheet th.sub { font-size: .75em; text-transform: uppercase; letter-spacing: .05em; }
+.sheet td.hc, .sheet th.hc { text-align: left; white-space: nowrap; background: #ffffff0d; }
+.sheet tr.cur td { background: #ffb30030; } .sheet tr.cur td.hc { background: #ffb30050; }
+.sheet td.rt { color: var(--muted); } .sheet td.sc.zero { color: var(--green); font-weight: 900; } .sheet td.sc { font-weight: 800; border-right-style: dashed; }
+.sheet tfoot td { font-size: 1.3em; font-weight: 900; border-top: 4px double #fff8; } .sheet td.tt.lead { background: var(--gold); color: #3a2800; }
+.modal-body > .scroll-x { flex: none; }
+.sheet th, .sheet td { padding: .3em .6em; }
+@media (max-height: 700px) { .sheet { font-size: .9em; } .sheet th, .sheet td { padding: .2em .5em; } }

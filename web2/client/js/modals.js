@@ -38,15 +38,7 @@ export function openSettings(app) {
 export function openScoreboard(app, view) {
   const me = app.session.playerId;
   const winner = view.players.find(p => p.id === view.winnerId);
-  const rows = view.players.map((p, i) => ({ p, i }));
-  const played = Math.max(...view.players.map(p => (p.handScores || []).length), 1);
-  const cols = Array.from({ length: view.handCount || played }, (_, k) => k);
-  const tbl = h('table', { class: 'score' },
-    h('thead', {}, h('tr', {}, h('th', {}, ''), cols.map(k => h('th', { class: k === view.handIndex ? 'cur' : '' }, k + 1)), h('th', { class: 'tot' }, t('score.total')))),
-    h('tbody', {}, rows.map(({ p, i }) => h('tr', { class: p.id === me ? 'me' : '' },
-      h('td', { class: 'pn' }, h('span', { class: 'dot', style: { background: COLORS[i] } }), p.name),
-      cols.map(k => { const v = (p.handScores || [])[k]; return h('td', { class: k === view.handIndex ? 'cur' : '' }, v == null ? '' : v); }),
-      h('td', { class: 'tot' }, p.score)))));
+  const tbl = scoreSheet(view, me);
   const body = [head(t('score.title', { n: view.handIndex + 1 }), 'sb', false),
     h('div', { class: 'modal-body' },
       winner ? h("div", { class: "winner-banner" }, '🎉 ' + t('score.wentOut', { name: winner.name })) : h("div", { class: "winner-banner" }, "\u{1F91D} " + t("score.stalemate")),
@@ -54,6 +46,33 @@ export function openScoreboard(app, view) {
       h('p', { class: 'muted' }, t('score.lowest')),
       h('button', { class: 'btn primary xl', onclick: async (e) => { e.target.disabled = true; const r = await app.transport.nextHand(); if (r && r.ok === false) { toast(r.error, 'bad'); e.target.disabled = false; } } }, view.handIndex + 1 >= (view.handCount || 99) ? t('score.final') : t('score.next')))];
   openModal('sb', body, { dismiss: false, cls: 'wide' });
+}
+
+export function contractWords(contract) {
+  const ns = contract.filter(c => (c.kind || c) === 'set').length, nr = contract.length - ns;
+  const part = (n, k) => n + ' ' + t(k + (n > 1 ? 's' : ''));
+  return [ns ? part(ns, 'kind.set') : null, nr ? part(nr, 'kind.run') : null].filter(Boolean).join(' + ');
+}
+export function scoreSheet(view, me) {
+  const n = view.players.length, hands = eng.HANDS(n);
+  const total = view.handCount || hands.length;
+  const done = (p) => (p.handScores || []).length;
+  const lead = Math.min(...view.players.map(p => p.score));
+  const played = Math.max(...view.players.map(done), 0);
+  const cell = (cls, v) => h('td', { class: cls }, v == null ? '' : v);
+  const head1 = h('tr', {}, h('th', { rowspan: 2, class: 'hc' }, t('sheet.hand')), view.players.map((p, i) => h('th', { colspan: 2, class: 'pg' + (p.id === me ? ' me' : ''), style: { '--pc': COLORS[i] } }, p.name)));
+  const head2 = h('tr', {}, view.players.map(() => [h('th', { class: 'sub' }, t('sheet.score')), h('th', { class: 'sub' }, t('sheet.total'))]));
+  const body = Array.from({ length: total }, (_, k) => {
+    const cur = k === view.handIndex;
+    return h('tr', { class: cur ? 'cur' : '' }, h('td', { class: 'hc' }, h('b', {}, (k + 1) + ' \u00B7 '), hands[k] ? contractWords(hands[k]) : ''),
+      view.players.map(p => { const hs = p.handScores || [], v = hs[k]; const run = v == null ? null : hs.slice(0, k + 1).reduce((a, b) => a + b, 0);
+        return [cell('sc' + (v === 0 ? ' zero' : ''), v), cell('rt', run)]; }));
+  });
+  const foot = h('tr', { class: 'totrow' }, h('td', { class: 'hc' }, t('score.total')), view.players.map(p => h('td', { colspan: 2, class: 'tt' + (played && p.score === lead ? ' lead' : '') }, (played && p.score === lead ? '\uD83D\uDC51 ' : '') + p.score)));
+  return h('table', { class: 'score sheet' }, h('thead', {}, head1, head2), h('tbody', {}, body), h('tfoot', {}, foot));
+}
+export function openScoreSheet(app, view) {
+  openModal('sheet', [head(t('sheet.title'), 'sheet'), h('div', { class: 'modal-body' }, h('div', { class: 'scroll-x' }, scoreSheet(view, app.session.playerId)), h('p', { class: 'muted' }, t('score.lowest')))], { cls: 'wide' });
 }
 
 export function openPodium(app, view) {
