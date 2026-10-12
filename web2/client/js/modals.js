@@ -16,10 +16,7 @@ export function openModal(id, content, { dismiss = true, cls = '' } = {}) {
 }
 const head = (title, id, dismiss = true) => h('div', { class: 'modal-head' }, h('h2', {}, title), dismiss ? h('button', { class: 'x-btn', onclick: () => closeModal(id) }, '✕') : null);
 
-export function openRules() {
-  const R = tr('rules.body');
-  openModal('rules', [head(t('rules'), 'rules'), h('div', { class: 'modal-body rules' }, R.map(([hd, items]) => h('section', {}, h('h3', {}, hd), h('ul', {}, items.map(i => h('li', { html: i }))))))]);
-}
+export { openRules } from './rulebook.js';
 export function openSettings(app) {
   const id = 'settings';
   const render = () => {

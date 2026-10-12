@@ -14,7 +14,7 @@ export async function probeServer() {
   try { await post('join', { code: '----', name: 'probe' }); return true; } catch { return false; }
 }
 export const serverApi = {
-  create: (name, bots, hard) => post('create', { name, bots, hard }),
+  create: (name, bots, hard, claimPenalty = 1) => post('create', { name, bots, hard, claimPenalty }),
   join: (code, name) => post('join', { code, name }),
 };
 
@@ -60,7 +60,7 @@ export class SoloTransport {
   _new() {
     const players = [{ id: 'me', name: this.opts.name || 'You', isBot: false }];
     this.opts.bots.forEach((b, i) => players.push({ id: 'bot' + (i + 1), name: b.name, isBot: true, botLevel: b.level }));
-    return eng.newGame({ players, hard: !!this.opts.hard });
+    return eng.newGame({ players, hard: !!this.opts.hard, claimPenalty: this.opts.claimPenalty == null ? 1 : this.opts.claimPenalty });
   }
   _room() {
     return { code: 'SOLO', hostId: 'me', started: true, players: this.state.players.map(p => ({ id: p.id, name: p.name, isBot: p.isBot, connected: true })) };
@@ -74,17 +74,17 @@ export class SoloTransport {
     clearTimeout(this.timer);
     const st = this.state;
     if (st.phase !== 'playing') return;
-    const p = st.players[st.turn];
+    const p = st.players.find(q => q.id === eng.currentActor(st));
     if (p && p.isBot) this.timer = setTimeout(() => this._botMove(p), 850 + Math.random() * 400);
   }
   _botMove(p) {
     const st = this.state;
-    if (st.phase !== 'playing' || st.players[st.turn].id !== p.id) return;
+    if (st.phase !== 'playing' || eng.currentActor(st) !== p.id) return;
     let r;
     try { r = eng.act(st, p.id, eng.chooseAction(eng.viewFor(st, p.id), p.botLevel || 'normal')); } catch (e) { console.error(e); r = { ok: false }; }
     if (!r.ok) {
       console.warn('bot action failed', r.error);
-      const fb = st.step === 'draw' ? { type: 'draw', from: 'stock' } : { type: 'discard', cardId: p.hand[0].id };
+      const fb = st.pendingClaim ? { type: 'pass' } : st.step === 'draw' ? { type: 'draw', from: 'stock' } : { type: 'discard', cardId: p.hand[0].id };
       r = eng.act(st, p.id, fb);
     }
     if (r.ok) { this.state = r.state; this._emit(r.events); }

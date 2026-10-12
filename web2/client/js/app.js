@@ -44,11 +44,11 @@ export const app = {
     this.transport = null; this.snap = null; this.table = null; this.lobby = null;
   },
   leave() { setSession(null); history.replaceState(null, '', location.pathname); this.goHome(); },
-  async startSolo({ name, bots, hard }) {
+  async startSolo({ name, bots, hard, claimPenalty }) {
     const session = { solo: true, code: 'SOLO', playerId: 'me' };
     if (this.serverUp) {
       try {
-        const r = await serverApi.create(name, bots, hard);
+        const r = await serverApi.create(name, bots, hard, claimPenalty);
         if (!r.ok) throw new Error(r.error);
         const s = { code: r.code, playerId: r.playerId, token: r.token };
         const sr = await new RemoteTransport(s).start(); if (!sr.ok) throw new Error(sr.error);
@@ -56,7 +56,7 @@ export const app = {
       } catch (e) { console.warn('server solo failed, falling back', e); }
     }
     setSession(session);
-    this.resume(session, { name, bots, hard });
+    this.resume(session, { name, bots, hard, claimPenalty });
   },
   resume(session, soloOpts) {
     this.leaveTransport();
@@ -82,9 +82,9 @@ export const app = {
       this.table.update(snap);
     }
   },
-  async createRoom({ name, hard }) {
+  async createRoom({ name, hard, claimPenalty }) {
     try {
-      const r = await serverApi.create(name, [], hard);
+      const r = await serverApi.create(name, [], hard, claimPenalty);
       if (!r.ok) return toast(r.error || 'Error', 'bad');
       const s = { code: r.code, playerId: r.playerId, token: r.token };
       setSession(s); this.resume(s);

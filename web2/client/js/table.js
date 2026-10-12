@@ -9,6 +9,7 @@ import { openScoreSheet, openRules, openSettings, openBuilder, openScoreboard, o
 const EMOTES = ['👍', '👏', '😂', '😮', '❤️', '😭'];
 const PHRASES = ['phrase.gg', 'phrase.hurry', 'phrase.oops', 'phrase.nice'];
 
+const top0 = (v) => (v.discard || [])[(v.discard || []).length - 1];
 export class Table {
   constructor(app) {
     this.app = app; this.sel = new Set(); this.meldSel = null; this.order = []; this.logItems = [];
@@ -57,7 +58,7 @@ export class Table {
     evs.forEach(ev => { const l = this.eventText(ev); if (l) this.addLog(l); });
     this.render();
     evs.forEach((ev, i) => setTimeout(() => this.animate(ev), i * 220));
-    const myTurn = v.phase === 'playing' && v.players[v.turn] === this.me;
+    const myTurn = this.myTurn || this.myClaim;
     if (myTurn && !this.lastTurnMe) beep('turn');
     this.lastTurnMe = myTurn;
     // modals
@@ -72,12 +73,16 @@ export class Table {
   pname(id) { const p = this.v.players.find(p => p.id === id); return p ? p.name : '?'; }
   pcol(id) { const i = this.v.players.findIndex(p => p.id === id); return COLORS[i] || '#888'; }
   eventText(ev) {
-    const n = this.pname(ev.playerId || ev.winnerId), pid = ev.playerId;
+    const n = this.pname(ev.playerId || ev.winnerId || ev.current), pid = ev.playerId;
     switch (ev.type) {
       case 'draw': return { pid, text: t(ev.from === 'discard' ? 'ev.drawDiscard' : 'ev.drawStock', { name: n }) };
       case 'lay': return { pid, text: t('ev.lay', { name: n }) };
       case 'add': return { pid, text: t('ev.add', { name: n, n: ev.n || 1 }) };
       case 'discard': return { pid, text: t('ev.discard', { name: n, card: cardName(cardFromId(ev.cardId)) }) };
+      case 'claim': return { pid: ev.playerId, text: t(ev.penalty ? 'ev.claimPen' : 'ev.claim', { name: n, n: ev.penalty }) };
+      case 'pass': return { pid: ev.playerId, text: t('ev.pass', { name: n }) };
+      case 'dead': return { text: t('ev.dead', { card: cardName(cardFromId(ev.cardId)) }) };
+      case 'claimOpen': return null;
       case 'handOver': return { pid: ev.winnerId, text: t('ev.handOver', { name: n }) };
       case 'gameOver': return { pid: ev.winnerId, text: t('ev.gameOver', { name: n }) };
     }
@@ -98,10 +103,15 @@ export class Table {
     else if (ev.type === 'discard') { fly(seatEl(ev.playerId), this.discEl, cardEl(cardFromId(ev.cardId), { cls: 'fly' }), 480); beep('discard'); }
     else if (ev.type === 'lay') { beep('lay'); this.root.querySelectorAll(`.meldgrp[data-owner="${ev.playerId}"] .meld`).forEach(m => m.classList.add('pop')); }
     else if (ev.type === 'add') { const m = this.root.querySelector(`.meld[data-meld-id="${ev.meldId}"]`); if (m) m.classList.add('pop'); beep('lay'); }
+    else if (ev.type === 'claim') { const to = seatEl(ev.playerId); fly(this.discEl, to, cardEl(cardFromId(ev.cardId), { cls: 'fly' }), 520); for (let k = 0; k < (ev.penalty || 0); k++) setTimeout(() => fly(this.stockEl, to, backEl('fly'), 480), 260 * (k + 1)); beep('lay'); }
     else if (ev.type === 'handOver' || ev.type === 'gameOver') beep('win');
   }
   // ---------- render ----------
-  get myTurn() { const v = this.v; return v.phase === 'playing' && v.players[v.turn] === this.me; }
+  get actorId() { const v = this.v; return v.phase !== 'playing' ? null : (v.pendingClaim ? v.pendingClaim.current : v.players[v.turn].id); }
+  get myTurn() { const v = this.v; return v.phase === 'playing' && !v.pendingClaim && v.players[v.turn] === this.me; }
+  get myClaim() { const v = this.v; return v.phase === 'playing' && !!v.pendingClaim && v.pendingClaim.current === this.me.id; }
+  get topLive() { const v = this.v, d = v.discard || [], top = d[d.length - 1]; return !!top && v.liveCardId === top.id; }
+  get canTakeDisc() { return this.topLive && !this.me.down && this.v.discarderId !== this.me.id; }
   render() {
     if (!this.v || this.drag) return;
     this.renderTop(); this.renderArena(); this.renderHandbar();
@@ -123,12 +133,14 @@ export class Table {
   promptEl() {
     const v = this.v;
     let text, cls = '';
+    const actor = v.players.find(p => p.id === this.actorId) || v.players[v.turn];
     if (v.phase !== 'playing') text = t('prompt.over');
+    else if (v.pendingClaim) { text = this.myClaim ? t('prompt.claim') : t('prompt.claimWait', { name: actor.name }); cls = this.myClaim ? 'mine' : ''; }
     else if (this.myTurn) {
       cls = 'mine';
       text = v.step === 'draw' ? t('prompt.draw') : (this.me.down ? t('prompt.down') : t('prompt.play'));
-    } else text = t('prompt.wait', { name: v.players[v.turn].name });
-    return h('div', { class: 'prompt ' + cls, style: { '--pc': this.pcol(v.players[v.turn].id) } }, text);
+    } else text = t('prompt.wait', { name: actor.name });
+    return h('div', { class: 'prompt ' + cls, style: { '--pc': this.pcol(actor.id) } }, text);
   }
   renderArena() {
     const v = this.v, n = v.players.length;
@@ -141,21 +153,35 @@ export class Table {
       h('div', { class: 'owner' }, g.p.name),
       h('div', { class: 'mrow' }, g.melds.map(m => this.meldEl(m))))) : h('div', { class: 'melds-empty' }, ''));
     const canDraw = this.myTurn && v.step === 'draw';
+    const live = this.topLive, dead = !!top0(v) && !live;
     const disc = v.discard || [], top = disc[disc.length - 1];
     const stockN = v.stockCount != null ? v.stockCount : cnt(v.stock);
     this.stockEl = h('div', { class: 'pile stock' + (canDraw ? ' can' : ''), onclick: () => canDraw && this.draw('stock') },
       h('div', { class: 'stack' }, backEl('s3'), backEl('s2'), backEl('s1')), h('div', { class: 'plabel' }, t('pile.stock')));
-    this.discEl = h('div', { class: 'pile discard drop-discard' + (canDraw && !this.me.down ? ' can' : '') + (canDraw && this.me.down ? ' locked' : ''), title: this.me.down ? t('hint.noDiscard') : null, onclick: () => this.discardClick() },
-      top ? cardEl(top, { cls: 'dtop' }) : h('div', { class: 'card empty' }), h('div', { class: 'plabel' }, t('pile.discard')));
-    const felt = h('div', { class: 'felt' }, meldsEl, h('div', { class: 'piles' }, this.stockEl, this.discEl));
+    this.discEl = h('div', { class: 'pile discard drop-discard' + (canDraw && this.canTakeDisc ? ' can' : '') + (canDraw && !this.canTakeDisc ? ' locked' : '') + (dead || (top0(v) && v.discarderId === this.me.id && canDraw) ? ' dead' : ''), title: this.discWhy(), onclick: () => this.discardClick() },
+      top ? cardEl(top, { cls: 'dtop' }) : h('div', { class: 'card empty' }), (dead || (top0(v) && v.discarderId === this.me.id && canDraw)) ? h('div', { class: 'deadtag' }, t('pile.dead')) : null, h('div', { class: 'plabel' }, t('pile.discard')));
+    const felt = h('div', { class: 'felt' }, meldsEl, h('div', { class: 'piles' }, this.stockEl, this.discEl, this.claimBox()));
     this.arena.className = 'arena n' + n;
     this.arena.replaceChildren(...seats, felt);
+  }
+  discWhy() {
+    if (this.me.down) return t('hint.noDiscard');
+    if (this.v.discarderId === this.me.id) return t('hint.ownDiscard');
+    if (!this.topLive) return t('hint.dead');
+    return null;
+  }
+  claimBox() {
+    const v = this.v, pc = v.pendingClaim; if (!pc || v.phase !== 'playing') return null;
+    const card = cardFromId(pc.cardId), from = this.pname(pc.fromId), pen = v.claimPenalty || 0;
+    if (!this.myClaim) return h('div', { class: 'claimbox wait' }, cardEl((v.discard || []).slice(-1)[0] || card, { cls: 'sm' }), h('div', {}, t('claim.wait', { name: this.pname(pc.current) })));
+    return h('div', { class: 'claimbox mine' }, h('div', { class: 'cq' }, t('claim.q', { name: from, card: cardName(card) }), pen ? h('small', {}, t('claim.pen', { n: pen })) : null),
+      h('div', { class: 'row center' }, h('button', { class: 'btn green xl', onclick: () => this.send({ type: 'claim' }) }, t('claim.take')), h('button', { class: 'btn xl', onclick: () => this.send({ type: 'pass' }) }, t('claim.pass'))));
   }
   seatEl(p, pos) {
     const i = this.v.players.indexOf(p), v = this.v, hc = p.cardCount != null ? p.cardCount : cnt(p.hand);
     const b = this.bubbles && this.bubbles[p.id];
     const fan = h('div', { class: 'minifan' }, Array.from({ length: Math.min(hc, 14) }, () => h('i', {})));
-    return h('div', { class: 'seat ' + pos + (v.players[v.turn] === p && v.phase === 'playing' ? ' turn' : ''), 'data-seat': p.id, style: { '--pc': COLORS[i] } },
+    return h('div', { class: 'seat ' + pos + (this.actorId === p.id ? ' turn' : ''), 'data-seat': p.id, style: { '--pc': COLORS[i] } },
       h('div', { class: 'avatar' }, p.name[0].toUpperCase(), v.dealer === i ? h('em', { class: 'dealer', title: t('dealer') }, 'D') : null),
       h('div', { class: 'sinfo' }, h('div', { class: 'sn' }, p.isBot ? '🤖 ' : '', p.name),
         h('div', { class: 'ss' }, h('b', {}, p.score), ' ' + t('score.pts'), p.down ? h('span', { class: 'down' }, t('down')) : null)),
@@ -190,7 +216,7 @@ export class Table {
     let canLay = false;
     if (play && !me.down) { try { canLay = eng.canGoDown(me.hand, v.contract).ok; } catch { } }
     if (my && v.step === 'draw') {
-      acts.push(btn('green', t('act.drawStock'), () => this.draw('stock')), btn('blue', t('act.takeDiscard'), () => this.draw('discard'), !(v.discard || []).length || me.down));
+      acts.push(btn('green', t('act.drawStock'), () => this.draw('stock')), btn('blue', t('act.takeDiscard'), () => this.draw('discard'), !this.canTakeDisc));
     }
     if (play) {
       if (!me.down) acts.push(btn('primary' + (canLay ? ' pulse' : ''), '🃏 ' + t('act.lay') + (canLay ? ' ✓' : ''), () => this.openLay()));
@@ -233,7 +259,7 @@ export class Table {
   }
   draw(from) { this.send({ type: 'draw', from }); }
   discardClick() {
-    if (this.myTurn && this.v.step === 'draw') { if (this.me.down) return toast(t('hint.noDiscard')); return this.draw('discard'); }
+    if (this.myTurn && this.v.step === 'draw') { const w = this.discWhy(); if (w || !this.canTakeDisc) return toast(w || t('hint.dead')); return this.draw('discard'); }
     if (this.myTurn && this.sel.size === 1) this.discard([...this.sel][0]);
   }
   async discard(id) { if (!id) return; if (this.isNew(id)) return toast(t('hint.justDrew'), 'bad'); const r = await this.send({ type: 'discard', cardId: id }); if (r && r.ok) this.sel.delete(id); }

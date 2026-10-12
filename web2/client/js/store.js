@@ -1,5 +1,5 @@
 const KEY = 'cont2.settings', SKEY = 'cont2.session';
-const defaults = { name: '', lang: (navigator.language || 'en').toLowerCase().startsWith('es') ? 'es' : 'en', large: false, sound: false, botCount: 2, botLevel: 'normal', hard: false };
+const defaults = { name: '', lang: (navigator.language || 'en').toLowerCase().startsWith('es') ? 'es' : 'en', large: false, sound: false, botCount: 2, botLevel: 'normal', hard: false, claimPenalty: 1 };
 export const settings = Object.assign({}, defaults, JSON.parse(localStorage.getItem(KEY) || '{}'));
 export function saveSettings() { localStorage.setItem(KEY, JSON.stringify(settings)); applySettings(); }
 export function applySettings() {

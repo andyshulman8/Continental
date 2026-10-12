@@ -257,3 +257,20 @@ table.sheet { border: 2px solid #ffffff44; font-size: 1.05em; }
 @media (max-height: 700px) { .sheet { font-size: .9em; } .sheet th, .sheet td { padding: .2em .5em; } }
 .hand .card.new { box-shadow: 0 0 0 3px #7CFFB2, 0 0 16px #7CFFB2aa, 0 4px 10px #0004; }
 .hand .card.new::after { content: "NEW"; position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); background: #2ecc71; color: #053d1f; font-size: .5em; padding: .1em .5em; border-radius: 999px; letter-spacing: .05em; }
+.claimbox { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 30; background: #fff; color: #222; border-radius: 22px; padding: 14px 18px; box-shadow: 0 10px 40px #000a, 0 0 0 5px var(--gold); display: flex; flex-direction: column; gap: 10px; align-items: center; animation: pop-in .3s; max-width: 90%; }
+.claimbox.wait { flex-direction: row; background: #0009; color: #fff; box-shadow: none; font-weight: 800; padding: 8px 14px; top: 6px; }
+.claimbox .cq { font-size: 1.3em; font-weight: 900; text-align: center; } .claimbox .cq small { display: block; font-size: .65em; color: #b02a27; }
+.claimbox .btn.xl { width: auto; padding: .6em 1.4em; margin: 0; }
+.piles { position: relative; }
+.felt { position: relative; } .piles .claimbox { top: auto; bottom: 100%; margin-bottom: 8px; }
+.pile.dead .card.dtop { filter: grayscale(.8) brightness(.7); } .pile.dead { opacity: .8; }
+.deadtag { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%) rotate(-12deg); background: #222c; color: #fff; font-weight: 900; padding: .2em .6em; border-radius: 8px; letter-spacing: .08em; z-index: 4; border: 2px solid #fff8; }
+.rulebook { max-height: 96vh; }
+.rb-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px; background: #0e2a47; flex: none; }
+.rb-tabs button { border: 0; background: #ffffff1a; border-radius: 999px; padding: .5em 1em; font-weight: 800; white-space: nowrap; min-height: 40px; }
+.rb-tabs button.on { background: var(--gold); color: #3a2800; }
+.rb-body { font-size: 1.12em; line-height: 1.5; } .rb-body h3 { font-size: 1.5em; color: var(--gold); } .rb-body p, .rb-body ul { margin: .3em 0; } .rb-body li { margin: .5em 0; }
+.rb-note { background: #ffb30026; border-left: 6px solid var(--gold); padding: .6em .9em; border-radius: 10px; font-weight: 700; }
+.rb-cards { margin: .5em 0; } .rb-row { display: flex; gap: 6px; flex-wrap: wrap; } .rb-cards figcaption { color: var(--muted); font-size: .85em; margin-top: 4px; }
+.modal .card.sm.rb { --w: clamp(46px, 9vw, 64px); cursor: default; }
+.rbtable { width: auto; min-width: 60%; } .rb-nav { margin-top: 12px; }

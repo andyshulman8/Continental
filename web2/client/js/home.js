@@ -14,12 +14,13 @@ export function renderHome(app, opts = {}) {
   const getName = () => { const n = (nameIn.value || '').trim(); if (!n) { nameIn.focus(); nameIn.classList.add('shake'); setTimeout(() => nameIn.classList.remove('shake'), 500); toast(t('home.needName'), 'bad'); return null; } return n; };
   const codeIn = h('input', { class: 'input code', maxlength: 4, placeholder: 'ABCD', value: opts.joinCode || '', autocapitalize: 'characters', autocomplete: 'off', oninput: (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); } });
   const hardChk = (id) => h('label', { class: 'check' }, h('input', { type: 'checkbox', id, checked: settings.hard ? '' : null, onchange: (e) => { settings.hard = e.target.checked; saveSettings(); } }), h('span', {}, h('b', {}, t('home.hard')), h('small', {}, t('home.hardDesc'))));
+  const penSeg = () => [h('label', {}, t('home.penalty')), seg([[0, '0'], [1, '1']], settings.claimPenalty, v => { settings.claimPenalty = v; saveSettings(); }), h('small', { class: 'muted' }, t('home.penaltyDesc'))];
   const botNames = ['Rosa', 'Max', 'Lola', 'Sam', 'Abuelo', 'Nico'];
   const play = () => {
     const name = getName(); if (!name) return;
     const pool = botNames.filter(n => n !== name).sort(() => Math.random() - .5);
     const bots = Array.from({ length: settings.botCount }, (_, i) => ({ name: pool[i], level: settings.botLevel }));
-    app.startSolo({ name, bots, hard: settings.hard });
+    app.startSolo({ name, bots, hard: settings.hard, claimPenalty: settings.claimPenalty });
   };
   const serverOk = app.serverUp;
   return h('div', { class: 'home' },
@@ -35,12 +36,12 @@ export function renderHome(app, opts = {}) {
         h('h2', {}, '🤖 ' + t('home.solo')), h('p', { class: 'muted' }, t('home.soloDesc') + (serverOk ? '' : ' ' + t('home.offline'))),
         h('label', {}, t('home.bots')), seg([[1, '1'], [2, '2'], [3, '3']], settings.botCount, v => { settings.botCount = v; saveSettings(); }),
         h('label', {}, t('home.level')), seg([['easy', t('level.easy')], ['normal', t('level.normal')], ['hard', t('level.hard')]], settings.botLevel, v => { settings.botLevel = v; saveSettings(); }),
-        hardChk('hard1'),
+        hardChk('hard1'), ...penSeg(),
         h('button', { class: 'btn primary xl', onclick: play }, t('home.play'))),
       h('div', { class: 'panel' + (serverOk ? '' : ' disabled') },
         h('h2', {}, '🏠 ' + t('home.create')), h('p', { class: 'muted' }, serverOk ? t('home.createDesc') : t('home.needServer')),
-        hardChk('hard2'),
-        h('button', { class: 'btn green xl', disabled: serverOk ? null : '', onclick: () => { const name = getName(); if (name) app.createRoom({ name, hard: settings.hard }); } }, t('home.createBtn'))),
+        hardChk('hard2'), ...penSeg(),
+        h('button', { class: 'btn green xl', disabled: serverOk ? null : '', onclick: () => { const name = getName(); if (name) app.createRoom({ name, hard: settings.hard, claimPenalty: settings.claimPenalty }); } }, t('home.createBtn'))),
       h('div', { class: 'panel' + (serverOk ? '' : ' disabled') },
         h('h2', {}, '🔑 ' + t('home.join')), h('p', { class: 'muted' }, serverOk ? t('home.joinDesc') : t('home.needServer')),
         codeIn,
