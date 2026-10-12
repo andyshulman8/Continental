@@ -70,7 +70,7 @@ function addBot(room, lvl, name) {
 
 function createRoom(body) {
   const room = {
-    code: newCode(), hostId: null, started: false, hard: !!body.hard, players: [],
+    code: newCode(), hostId: null, started: false, hard: !!body.hard, claimPenalty: Number.isInteger(body.claimPenalty) ? Math.max(0, Math.min(5, body.claimPenalty)) : 1, players: [],
     state: null, chat: [], clients: new Set(), botTimer: null, lastActive: Date.now(), pendingEvents: [],
   };
   const host = { id: 'p' + rid(3), name: cleanName(body.name), isBot: false, token: rid(16), connected: false };
@@ -84,7 +84,7 @@ function createRoom(body) {
 
 function roomInfo(room) {
   return {
-    code: room.code, hostId: room.hostId, started: room.started, hard: room.hard,
+    code: room.code, hostId: room.hostId, started: room.started, hard: room.hard, claimPenalty: room.claimPenalty,
     players: room.players.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot, ...(p.isBot ? { botLevel: p.botLevel } : {}), connected: p.isBot ? true : !!p.connected })),
   };
 }
@@ -109,19 +109,19 @@ function scheduleBot(room) {
   if (room.botTimer) { clearTimeout(room.botTimer); room.botTimer = null; }
   const st = room.state;
   if (!room.started || !st || st.phase !== 'playing') return;
-  const cur = st.players[st.turn];
-  const rp = cur && room.players.find((p) => p.id === cur.id);
+  const rp = room.players.find((p) => p.id === engine.currentActor(st));
   if (!rp || !rp.isBot) return;
+  const delay = st.pendingClaim ? Math.min(BOT_DELAY, 500) : BOT_DELAY;
   room.botTimer = setTimeout(() => {
     room.botTimer = null;
     if (!rooms.has(room.code) || room.state !== st) return;
     runBot(room, rp);
-  }, BOT_DELAY);
+  }, delay);
 }
 
 function runBot(room, bot) {
   const st = room.state;
-  if (!st || st.phase !== 'playing' || st.players[st.turn].id !== bot.id) return;
+  if (!st || st.phase !== 'playing' || engine.currentActor(st) !== bot.id) return;
   let res;
   try {
     const action = bots.chooseAction(engine.viewFor(st, bot.id), bot.botLevel);
@@ -144,6 +144,7 @@ function runBot(room, bot) {
 function botFallback(st, bot) {
   const me = st.players.find((p) => p.id === bot.id);
   try {
+    if (st.pendingClaim) return engine.act(st, bot.id, { type: 'pass' });
     if (st.step === 'draw') return engine.act(st, bot.id, { type: 'draw', from: 'stock' });
     for (const c of [...me.hand].sort((a, b) => engine.cardPoints(b) - engine.cardPoints(a))) {
       const r = engine.act(st, bot.id, { type: 'discard', cardId: c.id });
@@ -156,7 +157,7 @@ function botFallback(st, bot) {
 function startGame(room) {
   room.state = engine.newGame({
     players: room.players.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot, botLevel: p.botLevel })),
-    hard: room.hard,
+    hard: room.hard, claimPenalty: room.claimPenalty,
   });
   room.started = true;
 }
