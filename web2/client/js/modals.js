@@ -101,7 +101,7 @@ function confetti() {
 }
 
 // ---- Lay-down builder ----
-export function openBuilder({ hand, contract, onSubmit }) {
+export function openBuilder({ hand, contract, hard, onSubmit }) {
   const id = 'builder';
   const byId = new Map(hand.map(c => [c.id, c]));
   const groups = contract.map(() => []);
@@ -122,8 +122,9 @@ export function openBuilder({ hand, contract, onSubmit }) {
     const used = new Set(groups.flat());
     const vs = groups.map((_, i) => validate(i));
     vs.forEach((v, i) => { if (v.ok && v.ordered) groups[i] = v.ordered.map(c => c.id || c); });
-    const allOk = vs.every(v => v.ok);
     const left = hand.length - used.size;
+    const hardBlock = !!hard && left > 1;
+    const allOk = vs.every(v => v.ok) && !hardBlock;
     const gEls = groups.map((g, i) => {
       const v = vs[i], need = minOf(contract[i]);
       return h('div', { class: 'bgroup ' + (i === active ? 'active ' : '') + (v.ok ? 'ok' : ''), onclick: () => { active = i; draw(); } },
@@ -137,6 +138,7 @@ export function openBuilder({ hand, contract, onSubmit }) {
         h('div', { class: 'bgroups' }, gEls),
         h('div', { class: 'pool-title' }, t('lay.yourHand'), h('small', {}, ' — ' + t('lay.left', { n: left }))),
         h('div', { class: 'bpool' }, poolEls),
+        hard && vs.every(v => v.ok) && hardBlock ? h('div', { class: 'err' }, t('lay.hardLeft', { n: left })) : null,
         err ? h('div', { class: 'err' }, err) : null,
         h('div', { class: 'row' },
           h('button', { class: 'btn blue', onclick: () => { suggest(); draw(); } }, '✨ ' + t('lay.suggest')),

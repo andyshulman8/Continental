@@ -251,7 +251,7 @@ export class Table {
   }
   openLay() {
     const byId = new Map(this.me.hand.map(c => [c.id, c]));
-    openBuilder({ hand: this.order.map(i => byId.get(i)).filter(Boolean), contract: this.v.contract, onSubmit: async (melds) => { const r = await this.tp.act({ type: 'lay', melds }); if (r.ok) this.sel.clear(); return r; } });
+    openBuilder({ hand: this.order.map(i => byId.get(i)).filter(Boolean), contract: this.v.contract, hard: this.v.hard, onSubmit: async (melds) => { const r = await this.tp.act({ type: 'lay', melds }); if (r.ok) this.sel.clear(); return r; } });
   }
   // ---------- drag & drop ----------
   dragStart(e, id, el) {
