@@ -172,12 +172,13 @@ export class Table {
     if (!(this.myTurn && this.v.step === 'play' && this.me.down)) { if (this.myTurn && !this.me.down && this.v.step === 'play') toast(t('hint.notDown')); return; }
     this.meldSel = this.meldSel === id ? null : id; this.render();
   }
+  isNew(id) { return this.myTurn && this.v.step === 'play' && this.v.drawnCardId === id; }
   renderHandbar() {
     const v = this.v, me = this.me, my = this.myTurn, play = my && v.step === 'play';
     const byId = new Map(me.hand.map(c => [c.id, c]));
     const cards = this.order.map(i => byId.get(i)).filter(Boolean);
     this.handEl = h('div', { class: 'hand' + (this.dealing ? ' dealing' : '') }, cards.map((c, i) => {
-      const el = cardEl(c, { cls: this.sel.has(c.id) ? 'sel' : '' });
+      const el = cardEl(c, { cls: (this.sel.has(c.id) ? 'sel' : '') + (this.isNew(c.id) ? ' new' : '') });
       if (this.dealing) el.style.animationDelay = (i * 70) + 'ms';
       el.addEventListener('pointerdown', (e) => this.dragStart(e, c.id, el));
       return el;
@@ -198,7 +199,8 @@ export class Table {
         acts.push(btn(this.multi ? 'primary' : '', (this.multi ? '\u2611 ' : '\u2610 ') + t('act.multi'), () => { this.multi = !this.multi; if (!this.multi && this.sel.size > 1) this.sel.clear(); this.render(); }));
         acts.push(btn('blue' + (sel.length && m ? ' pulse' : ''), t('act.add'), () => this.addToMeld(), !(sel.length && m)));
       }
-      acts.push(btn('red' + (sel.length === 1 ? ' pulse' : ''), t('act.discard') + (sel.length === 1 ? ' ' + cardName(byId.get(sel[0])) : ''), () => this.discard(sel[0]), sel.length !== 1));
+      acts.push(btn('red' + (sel.length === 1 ? ' pulse' : ''), t('act.discard') + (sel.length === 1 ? ' ' + cardName(byId.get(sel[0])) : ''), () => this.discard(sel[0]), sel.length !== 1 || this.isNew(sel[0])));
+      if (sel.length === 1 && this.isNew(sel[0])) acts.push(h('span', { class: 'hint' }, t('hint.justDrew')));
       if (sel.length > 1) acts.push(h('span', { class: 'hint' }, t('hint.oneToDiscard')));
     }
     const sorters = h('div', { class: 'sorters' }, h('button', { class: 'btn sm', onclick: () => this.sortHand('rank') }, t('act.sortRank')), h('button', { class: 'btn sm', onclick: () => this.sortHand('suit') }, t('act.sortSuit')));
@@ -234,7 +236,7 @@ export class Table {
     if (this.myTurn && this.v.step === 'draw') { if (this.me.down) return toast(t('hint.noDiscard')); return this.draw('discard'); }
     if (this.myTurn && this.sel.size === 1) this.discard([...this.sel][0]);
   }
-  async discard(id) { if (!id) return; const r = await this.send({ type: 'discard', cardId: id }); if (r && r.ok) this.sel.delete(id); }
+  async discard(id) { if (!id) return; if (this.isNew(id)) return toast(t('hint.justDrew'), 'bad'); const r = await this.send({ type: 'discard', cardId: id }); if (r && r.ok) this.sel.delete(id); }
   async addToMeld(meldId, ids) {
     meldId = meldId || this.meldSel;
     const m = this.v.melds.find(m => m.id === meldId); if (!m) return;

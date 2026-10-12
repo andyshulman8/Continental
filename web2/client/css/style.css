@@ -255,3 +255,5 @@ table.sheet { border: 2px solid #ffffff44; font-size: 1.05em; }
 .modal-body > .scroll-x { flex: none; }
 .sheet th, .sheet td { padding: .3em .6em; }
 @media (max-height: 700px) { .sheet { font-size: .9em; } .sheet th, .sheet td { padding: .2em .5em; } }
+.hand .card.new { box-shadow: 0 0 0 3px #7CFFB2, 0 0 16px #7CFFB2aa, 0 4px 10px #0004; }
+.hand .card.new::after { content: "NEW"; position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); background: #2ecc71; color: #053d1f; font-size: .5em; padding: .1em .5em; border-radius: 999px; letter-spacing: .05em; }
