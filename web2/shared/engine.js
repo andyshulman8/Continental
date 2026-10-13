@@ -49,9 +49,9 @@ export function HANDS(n) {
     ...Array.from({ length: sets }, () => ({ kind: 'set' })),
     ...Array.from({ length: runs }, () => ({ kind: 'run' })),
   ];
-  const list = [mk(2, 0), mk(1, 1), mk(0, 2), mk(3, 0), mk(2, 1), mk(1, 2)];
+  const list = [mk(2, 0), mk(1, 1), mk(0, 2), mk(2, 1), mk(1, 2)];
   if (n === 3) list.push(mk(2, 2));
-  list.push(mk(0, 3), mk(0, 4));
+  list.push(mk(3, 0), mk(0, 3), mk(4, 0));
   return list;
 }
 
@@ -616,7 +616,7 @@ function actInner(state, playerId, action) {
         s.liveCardId = null;
       } else {
         if (s.stock.length === 0) {
-          const cap = s.maxReshuffles ?? (s.players.length === 2 && minCardsFor(s.contract) > 12 ? 0 : 2);
+          const cap = s.maxReshuffles ?? (minCardsFor(s.contract) > 12 ? 0 : 2);
           if (s.discard.length <= 1 || s.reshuffles >= cap) {
             endHand(s, null, events, 'the stock ran out');
             return { ok: true, state: s, events };

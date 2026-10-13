@@ -45,9 +45,9 @@ test('cardPoints', () => {
 
 test('HANDS schedules', () => {
   const lab = (c) => `${c.filter((x) => x.kind === 'set').length}S${c.filter((x) => x.kind === 'run').length}R`;
-  assert.deepEqual(HANDS(2).map(lab), ['2S0R', '1S1R', '0S2R', '3S0R', '2S1R', '1S2R', '0S3R', '0S4R']);
+  assert.deepEqual(HANDS(2).map(lab), ['2S0R', '1S1R', '0S2R', '2S1R', '1S2R', '3S0R', '0S3R', '4S0R']);
   assert.deepEqual(HANDS(4).map(lab), HANDS(2).map(lab));
-  assert.deepEqual(HANDS(3).map(lab), ['2S0R', '1S1R', '0S2R', '3S0R', '2S1R', '1S2R', '2S2R', '0S3R', '0S4R']);
+  assert.deepEqual(HANDS(3).map(lab), ['2S0R', '1S1R', '0S2R', '2S1R', '1S2R', '2S2R', '3S0R', '0S3R', '4S0R']);
 });
 
 test('newGame deals 11 cards, decks sized per player count, unique ids', () => {
@@ -210,7 +210,7 @@ test('canGoDown: set + run, uses wilds sensibly', () => {
 
 test('canGoDown: 2 sets + 2 runs from 14 cards', () => {
   const hand = cs('S7 H7 D7 C9 D9 H9 C2 C3 C4 C5 H10 H11 H12 H13');
-  const contract = HANDS(3)[6];
+  const contract = HANDS(3)[5];
   checkLayout(hand, contract, canGoDown(hand, contract));
   // too few cards
   assert.equal(canGoDown(hand.slice(0, 11), contract).ok, false);
@@ -237,10 +237,10 @@ test('canGoDown: wilds fill gaps but are limited; red aces can be natural', () =
   assert.equal(canGoDown(weak, HANDS(2)[2]).ok, false);
 });
 
-test('canGoDown: 4 runs needs 16 cards', () => {
-  const hand = cs('S2 S3 S4 S5 H6 H7 H8 H9 C10 C11 C12 C13 D2 D3 D4 D5');
+test('canGoDown: 4 sets needs 12 cards', () => {
+  const hand = cs('S2 H2 D2 S3 H3 D3 S4 H4 D4 S5 H5 D5');
   checkLayout(hand, HANDS(2)[7], canGoDown(hand, HANDS(2)[7]));
-  assert.equal(canGoDown(hand.slice(0, 12), HANDS(2)[7]).ok, false);
+  assert.equal(canGoDown(hand.slice(0, 11), HANDS(2)[7]).ok, false);
 });
 
 test('canGoDown: randomized layouts are always valid', () => {
@@ -506,7 +506,7 @@ test('stock exhaustion with nothing to reshuffle ends hand as stalemate', () => 
 });
 
 test('infeasible contract ends via stalemate once stock runs out (no reshuffle)', () => {
-  const s0 = setup({ n: 2, hand: 7, step: 'draw' });
+  const s0 = setup({ n: 3, hand: 5, step: 'draw' });
   s0.stock = [];
   s0.discard = cs('S2 S3 S4');
   const s = ok(act(s0, 'p0', { type: 'draw', from: 'stock' }));
