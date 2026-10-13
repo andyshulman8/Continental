@@ -46,6 +46,9 @@ export class RemoteTransport {
   addBot(level) { return this._p('addbot', { level }); }
   removeBot(id) { return this._p('removebot', { id, botId: id, playerId: id }); }
   rematch() { return this._p('rematch'); }
+  setReady(ready) { return this._p('ready', { ready }); }
+  kick(playerId) { return this._p('kick', { playerId }); }
+  leaveRoom() { return this._p('leave'); }
 }
 
 // ---------- Solo (offline) ----------
@@ -110,4 +113,7 @@ export class SoloTransport {
   async start() { return { ok: true }; }
   async addBot() { return { ok: false }; }
   async removeBot() { return { ok: false }; }
+  async setReady() { return { ok: true }; }
+  async kick() { return { ok: false }; }
+  async leaveRoom() { return { ok: true }; }
 }

@@ -15,6 +15,7 @@ const PORT = Number(process.env.PORT) || 5190;
 const BOT_DELAY = Number(process.env.BOT_DELAY_MS) || 900;
 const IDLE_MS = 6 * 60 * 60 * 1000;
 const MAX_BODY = 64 * 1024;
+const LOBBY_GRACE_MS = Number(process.env.LOBBY_GRACE_MS) || 45 * 1000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -73,7 +74,7 @@ function createRoom(body) {
     code: newCode(), hostId: null, started: false, hard: !!body.hard, claimPenalty: Number.isInteger(body.claimPenalty) ? Math.max(0, Math.min(5, body.claimPenalty)) : 1, players: [],
     state: null, chat: [], clients: new Set(), botTimer: null, lastActive: Date.now(), pendingEvents: [],
   };
-  const host = { id: 'p' + rid(3), name: cleanName(body.name), isBot: false, token: rid(16), connected: false };
+  const host = { id: 'p' + rid(3), name: cleanName(body.name), isBot: false, token: rid(16), connected: false, ready: true };
   room.players.push(host);
   room.hostId = host.id;
   const bl = Array.isArray(body.bots) ? body.bots.slice(0, 3) : [];
@@ -85,8 +86,27 @@ function createRoom(body) {
 function roomInfo(room) {
   return {
     code: room.code, hostId: room.hostId, started: room.started, hard: room.hard, claimPenalty: room.claimPenalty,
-    players: room.players.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot, ...(p.isBot ? { botLevel: p.botLevel } : {}), connected: p.isBot ? true : !!p.connected })),
+    players: room.players.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot, ...(p.isBot ? { botLevel: p.botLevel } : {}), connected: p.isBot ? true : !!p.connected, ready: p.isBot || p.id === room.hostId ? true : !!p.ready })),
   };
+}
+
+// Lobby-only: take a human out of an unstarted room, handing the host role on if needed.
+function removeFromLobby(room, player) {
+  const i = room.players.indexOf(player);
+  if (i < 0 || room.started) return;
+  room.players.splice(i, 1);
+  for (const c of [...room.clients]) if (c.playerId === player.id) {
+    try { c.res.end(); } catch { /* closed */ }
+    room.clients.delete(c);
+  }
+  if (player._dropTimer) { clearTimeout(player._dropTimer); player._dropTimer = null; }
+  if (room.hostId === player.id) {
+    const next = room.players.find((p) => !p.isBot);
+    if (!next) { rooms.delete(room.code); return; }
+    room.hostId = next.id;
+    next.ready = true;
+  }
+  broadcast(room);
 }
 
 function snapshotFor(room, playerId, events) {
@@ -178,7 +198,7 @@ const API = {
     }
     if (room.started) fail('Game already started');
     if (room.players.length >= 4) fail('Room is full');
-    const p = { id: 'p' + rid(3), name, isBot: false, token: rid(16), connected: false };
+    const p = { id: 'p' + rid(3), name, isBot: false, token: rid(16), connected: false, ready: false };
     room.players.push(p);
     broadcast(room);
     return { ok: true, code: room.code, playerId: p.id, token: p.token };
@@ -204,11 +224,34 @@ const API = {
     broadcast(room);
     return { ok: true };
   },
+  ready(b) {
+    const room = getRoom(b.code); const me = getPlayer(room, b.token);
+    if (room.started) fail('Game already started');
+    me.ready = !!b.ready;
+    broadcast(room);
+    return { ok: true };
+  },
+  kick(b) {
+    const room = getRoom(b.code); const me = getPlayer(room, b.token);
+    if (me.id !== room.hostId) fail('Only the host can do that');
+    if (room.started) fail('Game already started');
+    const target = room.players.find((p) => !p.isBot && p.id === b.playerId);
+    if (!target || target === me) fail('No such player');
+    removeFromLobby(room, target);
+    return { ok: true };
+  },
+  leave(b) {
+    const room = getRoom(b.code); const me = getPlayer(room, b.token);
+    if (!room.started) removeFromLobby(room, me);
+    return { ok: true };
+  },
   start(b) {
     const room = getRoom(b.code); const me = getPlayer(room, b.token);
     if (me.id !== room.hostId) fail('Only the host can start the game');
     if (room.started) fail('Game already started');
     if (room.players.length < 2 || room.players.length > 4) fail('Need 2 to 4 players');
+    const waiting = room.players.filter((p) => !p.isBot && p.id !== room.hostId && !p.ready);
+    if (waiting.length) fail(`Waiting for ${waiting.map((p) => p.name).join(', ')} to ready up`);
     startGame(room);
     broadcast(room);
     return { ok: true };
@@ -287,6 +330,7 @@ function handleSSE(req, res, url) {
   const client = { res, playerId: me.id };
   room.clients.add(client);
   me.connected = true;
+  if (me._dropTimer) { clearTimeout(me._dropTimer); me._dropTimer = null; }
   res.write(`data: ${JSON.stringify(snapshotFor(room, me.id, []))}\n\n`);
   // tell others this player is connected (skip resending to self twice)
   for (const c of room.clients) if (c !== client) {
@@ -299,6 +343,12 @@ function handleSSE(req, res, url) {
     if (![...room.clients].some((c) => c.playerId === me.id)) {
       me.connected = false;
       if (rooms.has(room.code)) broadcast(room);
+      if (!room.started && room.players.includes(me)) {
+        me._dropTimer = setTimeout(() => {
+          me._dropTimer = null;
+          if (!me.connected && !room.started && rooms.has(room.code)) removeFromLobby(room, me);
+        }, LOBBY_GRACE_MS);
+      }
     }
   });
 }

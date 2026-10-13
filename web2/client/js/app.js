@@ -43,7 +43,10 @@ export const app = {
     if (this.transport) this.transport.close();
     this.transport = null; this.snap = null; this.table = null; this.lobby = null;
   },
-  leave() { setSession(null); history.replaceState(null, '', location.pathname); this.goHome(); },
+  leave() {
+    if (this.transport && !this.session?.solo && this.transport.leaveRoom) this.transport.leaveRoom();
+    setSession(null); history.replaceState(null, '', location.pathname); this.goHome();
+  },
   async startSolo({ name, bots, hard, claimPenalty }) {
     const session = { solo: true, code: 'SOLO', playerId: 'me' };
     if (this.serverUp) {
@@ -73,6 +76,9 @@ export const app = {
   },
   onSnap(snap) {
     this.snap = snap;
+    if (!this.session?.solo && !snap.room.players.some((p) => p.id === this.session?.playerId)) {
+      toast(t('lobby.removed'), 'bad'); setSession(null); history.replaceState(null, '', location.pathname); this.goHome(); return;
+    }
     const started = snap.room.started && snap.view;
     if (!started) {
       if (this.screen !== 'lobby') { this.screen = 'lobby'; closeAllModals(); this.lobby = renderLobby(this); this.root.replaceChildren(this.lobby.el); }
