@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import * as engine from '../shared/engine.js';
 import * as bots from '../shared/bots.js';
+import { normalizeFunnelUrl } from '../shared/funnel.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.resolve(__dirname, '../client');
@@ -384,6 +385,7 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/')) {
       const name = p.slice(5);
       if (name === 'events' && req.method === 'GET') return handleSSE(req, res, url);
+      if (name === 'config' && req.method === 'GET') return sendJson(res, 200, { ok: true, funnelUrl: normalizeFunnelUrl(process.env.FUNNEL_URL) });
       if (req.method !== 'POST' || !Object.hasOwn(API, name)) return sendJson(res, 404, { ok: false, error: 'Unknown endpoint' });
       const body = await readBody(req);
       return sendJson(res, 200, API[name](body));

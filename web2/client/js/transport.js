@@ -13,6 +13,9 @@ async function post(path, body) {
 export async function probeServer() {
   try { await post('join', { code: '----', name: 'probe' }); return true; } catch { return false; }
 }
+export async function fetchConfig() {
+  try { const r = await fetch('/api/config'); return (await r.json()).funnelUrl || null; } catch { return null; }
+}
 export const serverApi = {
   create: (name, bots, hard, claimPenalty = 1) => post('create', { name, bots, hard, claimPenalty }),
   join: (code, name) => post('join', { code, name }),

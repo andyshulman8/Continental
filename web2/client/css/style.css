@@ -73,6 +73,8 @@ label { display: block; font-weight: 800; margin: .8em 0 .35em; color: #cfe3f8; 
 .lobby-card { max-width: 640px; margin: 16px auto; }
 .lobby-code { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 14px; }
 .code-big { font-size: clamp(3em, 10vw, 5em); font-weight: 900; letter-spacing: .25em; padding-left: .25em; color: var(--gold); text-shadow: 0 4px 0 #0007; line-height: 1; }
+.funnel-box { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 12px; }
+.funnel-url { user-select: all; word-break: break-all; background: #0004; padding: 6px 10px; border-radius: 8px; font-size: .85em; }
 .slots { display: grid; gap: 10px; }
 .slot { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 16px; min-height: 64px; }
 .slot.filled { background: #ffffff14; border-left: 8px solid var(--pc); font-size: 1.15em; font-weight: 800; }
