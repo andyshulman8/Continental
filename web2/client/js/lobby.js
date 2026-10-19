@@ -1,10 +1,13 @@
 import { h, toast } from './dom.js';
 import { t } from './i18n.js';
 import { settings, COLORS } from './store.js';
+import { fetchConfig } from './transport.js';
+import { inviteHtml } from '/shared/funnel.js';
 import { openRules, openSettings } from './modals.js';
 
 export function renderLobby(app) {
-  const L = { el: h('div', { class: 'lobby' }), snap: null, level: settings.botLevel };
+  const L = { el: h('div', { class: 'lobby' }), snap: null, level: settings.botLevel, funnelUrl: null };
+  fetchConfig().then((u) => { if (u !== L.funnelUrl) { L.funnelUrl = u; L.render(); } });
   L.update = (snap) => { L.snap = snap; L.render(); };
   L.render = () => {
     const snap = L.snap; if (!snap) return;
@@ -39,6 +42,7 @@ export function renderLobby(app) {
         h('div', { class: 'lobby-code' }, h('small', {}, t('lobby.code')), h('div', { class: 'code-big' }, room.code),
           h('button', { class: 'chip-btn', onclick: async () => { try { await navigator.clipboard.writeText(link); toast(t('lobby.copied')); } catch { toast(link); } } }, '🔗 ' + t('lobby.copy')),
           h('small', { class: 'muted' }, t('lobby.share'))),
+        funnelBox(L.funnelUrl),
         h('div', { class: 'slots' }, slots),
         host ? h('div', { class: 'lobby-actions' },
           h('div', { class: 'row' },
@@ -52,4 +56,14 @@ export function renderLobby(app) {
     );
   };
   return L;
+}
+
+function funnelBox(url) {
+  const box = h('div', { class: 'funnel-box', html: inviteHtml(url, { title: t('lobby.funnel'), copy: t('lobby.funnelCopy'), hint: t('lobby.funnelHint') }) });
+  const code = box.querySelector('.funnel-url'), btn = box.querySelector('.funnel-copy');
+  if (btn) btn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(code.textContent); toast(t('lobby.copied')); }
+    catch { const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast(t('lobby.funnel')); }
+  });
+  return box;
 }
